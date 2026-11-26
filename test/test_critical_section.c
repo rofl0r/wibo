@@ -171,6 +171,8 @@ static void test_leave_without_enter(void) {
 
 	LeaveCriticalSection(&cs);
 	TEST_CHECK_EQ(-1, cs.LockCount);
+	LeaveCriticalSection(&cs);
+	TEST_CHECK_EQ(-1, cs.LockCount);
 
 	TEST_CHECK(TryEnterCriticalSection(&cs));
 	LeaveCriticalSection(&cs);

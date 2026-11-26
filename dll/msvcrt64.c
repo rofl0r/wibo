@@ -426,7 +426,10 @@ void *CDECL msvcrt_malloc(SIZE_T size) {
 
 void *CDECL msvcrt_calloc(SIZE_T count, SIZE_T size) {
 	HOST_CONTEXT_GUARD();
-	return calloc(count, size);
+	if (size && count > (SIZE_T)-5 / size) {
+		return NULL;
+	}
+	return calloc(1, count * size + 4);
 }
 
 void CDECL msvcrt_free(void *ptr) {
