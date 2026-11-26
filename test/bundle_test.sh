@@ -19,27 +19,27 @@ fail() {
 	exit 1
 }
 
-"$wibo" --bundle -o "$work/dll" "$fixtures/test_external_dll.exe" "$fixtures/external_exports.dll" ||
+$runner "$wibo" --bundle -o "$work/dll" "$fixtures/test_external_dll.exe" "$fixtures/external_exports.dll" ||
 	fail "packing a program with a DLL failed"
 (cd "$work/cwd" && $runner "$work/dll" >"$work/out") || fail "bundle with a DLL exited non-zero"
 # Windows text-mode stdout ends lines with CRLF on the 32-bit build.
 out=$(tr -d '\r' <"$work/out")
 [ "$out" = "external_exports: sum=42 attached=1" ] || fail "bundle with a DLL printed: $out"
 
-"$wibo" --bundle -o "$work/nodll" "$fixtures/test_msvcrt_printf.exe" || fail "packing a DLL-less program failed"
+$runner "$wibo" --bundle -o "$work/nodll" "$fixtures/test_msvcrt_printf.exe" || fail "packing a DLL-less program failed"
 (cd "$work/cwd" && $runner "$work/nodll" >/dev/null) || fail "bundle without DLLs exited non-zero"
 
 # The bundle's own argv must pass through to the guest; `--bundle` here must not select bundler mode.
 (cd "$work/cwd" && $runner "$work/nodll" --bundle -o ignored >/dev/null) ||
 	fail "bundle did not pass its arguments through to the guest"
 
-if "$wibo" --bundle -o "$work/dup" "$fixtures/test_external_dll.exe" "$fixtures/external_exports.dll" \
+if $runner "$wibo" --bundle -o "$work/dup" "$fixtures/test_external_dll.exe" "$fixtures/external_exports.dll" \
 	"$fixtures/external_exports.dll" 2>/dev/null; then
 	fail "packer accepted a duplicate file name"
 fi
 mkdir "$work/other"
 cp "$fixtures/external_exports.dll" "$work/other/EXTERNAL_EXPORTS.DLL"
-if "$wibo" --bundle -o "$work/dup" "$fixtures/external_exports.dll" "$work/other/EXTERNAL_EXPORTS.DLL" \
+if $runner "$wibo" --bundle -o "$work/dup" "$fixtures/external_exports.dll" "$work/other/EXTERNAL_EXPORTS.DLL" \
 	2>/dev/null; then
 	fail "packer accepted a duplicate file name differing only in case"
 fi
@@ -54,7 +54,7 @@ case $machine in
 esac
 cp "$fixtures/external_exports.dll" "$work/mixed.dll"
 printf "$flipped" | dd of="$work/mixed.dll" bs=1 seek=$((pe_off + 4)) conv=notrunc 2>/dev/null
-if "$wibo" --bundle -o "$work/mixed" "$fixtures/test_external_dll.exe" "$work/mixed.dll" 2>/dev/null; then
+if $runner "$wibo" --bundle -o "$work/mixed" "$fixtures/test_external_dll.exe" "$work/mixed.dll" 2>/dev/null; then
 	fail "packer accepted a DLL with a different PE machine type"
 fi
 
