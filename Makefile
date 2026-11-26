@@ -31,12 +31,10 @@
 #   EXTRA_CFLAGS, EXTRA_LDFLAGS, EXTRA_LIBS  appended to the wibo build flags
 #   WIBO_BUNDLE_FILES      first file is the Win64 program run by the bundle, the rest are its DLLs
 
-UNAME_S := $(shell uname -s)
-
 .DEFAULT_GOAL := all
 
 ifeq ($(origin CC),default)
-CC := $(if $(filter Darwin,$(UNAME_S)),cc,gcc)
+CC := gcc
 endif
 HOST_CC ?= cc
 
@@ -57,6 +55,14 @@ else ifneq ($(findstring __i386__,$(CC_PREDEFINES)),)
 TARGET_ARCH := i686
 else
 $(error CC='$(CC)' targets neither x86 nor x86_64)
+endif
+
+ifneq ($(findstring __APPLE__,$(CC_PREDEFINES)),)
+TARGET_OS := Darwin
+else ifneq ($(findstring __linux__,$(CC_PREDEFINES)),)
+TARGET_OS := Linux
+else
+$(error CC='$(CC)' targets neither Linux nor Darwin)
 endif
 
 WIN64 ?= 0
@@ -113,21 +119,19 @@ ifeq ($(CC_IS_CLANG),0)
 GNU_ONLY_FLAGS := -maccumulate-outgoing-args
 endif
 
-ifeq ($(UNAME_S),Darwin)
+ifeq ($(TARGET_OS),Darwin)
 PLATFORM_SRCS := src/async_io_kqueue.c src/processes_darwin.c src/setup_darwin.c
 PLATFORM_LDFLAGS := -Wl,-no_pie,-no_fixup_chains -Wl,-segalign,0x1000 -Wl,-pagezero_size,0x1000 \
 	-Wl,-image_base,0x7E001000 -Wl,-segaddr,RESV32,0x1000 -Wl,-segprot,RESV32,-,-
 PLATFORM_LIBS :=
-else ifeq ($(UNAME_S),Linux)
+else
 PLATFORM_SRCS := src/async_io_epoll.c src/processes_linux.c $(if $(filter 1,$(WIN64)),src/setup_linux64.c,src/setup_linux.c)
 # GNU ld on ELF rejects --image-base; -Ttext-segment places the image at the same address.
 PLATFORM_LDFLAGS := -no-pie -Wl,-Ttext-segment=0x70000000
 PLATFORM_LIBS := -latomic
-else
-$(error Unsupported platform '$(UNAME_S)')
 endif
 
-ifeq ($(WIBO_ENABLE_LIBURING)-$(UNAME_S),1-Linux)
+ifeq ($(WIBO_ENABLE_LIBURING)-$(TARGET_OS),1-Linux)
 ENABLE_URING := 1
 URING_SRCS := src/async_io_uring.c
 ifeq ($(WIBO_LIBURING_STATIC),1)
@@ -297,13 +301,20 @@ $(CFLAGS_STAMP): FORCE | $(BUILD_DIR)
 	@printf '%s\n' '$(CC) $(WIBO_CFLAGS) $(WIBO_CSTD)' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
+# The link is redone when the linker command changes (CC, LDFLAGS, libraries). Otherwise a CC switch would
+# leave the old binary in place once the objects were up to date.
+LINK_STAMP := $(BUILD_DIR)/link.stamp
+$(LINK_STAMP): FORCE | $(BUILD_DIR)
+	@printf '%s\n' '$(CC) $(WIBO_LDFLAGS) $(WIBO_LIBS)' > $@.tmp
+	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
 define EMBED_RULE
 $$(OBJ_DIR)/dll/$(1).c.o: OBJ_CFLAGS := -DEMBED_PATH='"$$(VENDOR_ABS)/$(1).dll"'
 $$(OBJ_DIR)/dll/$(1).c.o: $$(VENDOR_DIR)/$(1).dll
 endef
 $(foreach d,$(EMBEDDED_WINE_DLLS),$(eval $(call EMBED_RULE,$(d))))
 
-ifeq ($(UNAME_S),Darwin)
+ifeq ($(TARGET_OS),Darwin)
 $(OBJ_DIR)/src/setup_darwin.c.o: OBJ_CFLAGS += -fms-extensions
 endif
 
@@ -322,7 +333,7 @@ wibo64: FORCE
 print-wibo:
 	@echo $(WIBO)
 
-$(WIBO): $(WIBO_OBJS) | $(BUILD_DIR)
+$(WIBO): $(WIBO_OBJS) $(LINK_STAMP) | $(BUILD_DIR)
 	$(CC) $(WIBO_LDFLAGS) -o $@ $(WIBO_OBJS) $(WIBO_LIBS)
 
 $(OBJ_DIR)/%.c.o: %.c $(CFLAGS_STAMP) | $(TRAMP_STAMPS) $(GEN_DIR)/version_info.h
@@ -340,7 +351,7 @@ $(TRAMP_OBJS): $(OBJ_DIR)/generated/%_trampolines.S.o: $(GEN_DIR)/%_trampolines.
 
 $(GEN_DIR)/version_info.h: src/version_info.h.in FORCE | $(GEN_DIR)
 	sed -e 's|@WIBO_VERSION_STRING@|$(WIBO_VERSION)|' \
-		-e 's|@WIBO_SYSTEM_NAME@|$(UNAME_S)|' \
+		-e 's|@WIBO_SYSTEM_NAME@|$(TARGET_OS)|' \
 		-e 's|@WIBO_SYSTEM_PROCESSOR@|$(TARGET_ARCH)|' $< > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
@@ -356,7 +367,7 @@ bundle-tool: $(WIBO_BUNDLE_TOOL)
 
 # Linking the payload in: the pak is .incbin'd between the weak symbols that src/bundle.c looks up.
 ifneq ($(WIBO_BUNDLE_FILES),)
-ifneq ($(UNAME_S),Linux)
+ifneq ($(TARGET_OS),Linux)
 $(error WIBO_BUNDLE_FILES is only supported on Linux)
 endif
 BUNDLE_PAK := $(GEN_DIR)/bundle.pak
@@ -390,7 +401,7 @@ $(BUNDLE_PAYLOAD_O): $(BUNDLE_PAYLOAD_S)
 	@mkdir -p $(@D)
 	$(CC) $(WIBO_COMMON_FLAGS) -c $< -o $@
 
-$(WIBO_BUNDLED): $(WIBO_OBJS) $(BUNDLE_PAYLOAD_O) | $(BUILD_DIR)
+$(WIBO_BUNDLED): $(WIBO_OBJS) $(BUNDLE_PAYLOAD_O) $(LINK_STAMP) | $(BUILD_DIR)
 	$(CC) $(WIBO_LDFLAGS) -o $@ $(WIBO_OBJS) $(BUNDLE_PAYLOAD_O) $(WIBO_LIBS)
 
 bundle: $(WIBO_BUNDLED)

@@ -35,14 +35,14 @@ Build variables (pass on the command line, e.g. `make DEBUG=1 wibo64`):
 | ------------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
 | `DEBUG`                   | `0`                    | `1` builds with `-O0 -g3`; `0` builds with `-O3 -DNDEBUG`                                    |
 | `WIN64`                   | `0`                    | `1` selects the 64-bit loader (`wibo64`), used by `make` and `make test`                     |
-| `CC`                      | `gcc` (`cc` on macOS)  | Target C compiler. The architecture it generates selects the build: `__x86_64__` gives the x86_64 loader, `__i386__` the i686 loader (see below). Pass flags with it if needed, e.g. `CC="gcc -m32"`. The build stops early if the target is neither |
+| `CC`                      | `gcc`                  | Target C compiler. The architecture and OS it generates select the build: `__x86_64__` or `__i386__` picks the loader architecture (see below), and `__linux__` or `__APPLE__` picks the platform. Pass flags with it if needed, e.g. `CC="gcc -m32"`. The build stops early if the target is neither |
 | `CFLAGS`, `LDFLAGS`       | empty                  | Passed to the wibo compile and link steps, e.g. `make CFLAGS=-flto LDFLAGS=-flto` for link-time optimization. Host tools (`gentramp`, `wibo-bundle`) are not affected |
 | `WIBO_ENABLE_LIBURING`    | `0`                    | Set to `1` to enable the io_uring backend (links system `liburing`)                          |
 | `WIBO_ENABLE_WINE_DLLS`   | `1`                    | Set to `0` to skip embedding the Wine CRT DLLs (see below)                                   |
 | `MINGW_CC`, `MINGW_WINDRES` | `i686-w64-mingw32-gcc`, `i686-w64-mingw32-windres` (`x86_64-w64-mingw32-gcc` when `WIN64=1`) | MinGW tools used to build the test fixtures |
 | `EXTRA_CFLAGS`, `EXTRA_LDFLAGS`, `EXTRA_LIBS` | empty      | Extra flags appended to compile, link, and library steps                                     |
 
-Architecture is decided by `CC`, as is usual for POSIX builds. The Makefile asks the compiler for its predefined macros (`$(CC) -dM -E`) and builds for whichever of `__x86_64__` or `__i386__` it defines. The C sources test the same macros, so the Makefile and the code cannot disagree. A 32-bit build therefore needs a 32-bit compiler: `CC="gcc -m32"` with multilib, or a cross compiler such as `i686-linux-gnu-gcc`. No `-m32` is added implicitly. Setting `WIN64=1` requires an x86_64 `CC`.
+Architecture and OS are decided only by `CC`, as is usual for POSIX builds. The Makefile never calls `uname`, so cross-compiling works. It asks the compiler for its predefined macros (`$(CC) -dM -E`) and builds for whichever of `__x86_64__` or `__i386__` it defines, on `__linux__` or `__APPLE__`. The C sources test the same macros, so the Makefile and the code cannot disagree. A 32-bit build therefore needs a 32-bit compiler: `CC="gcc -m32"` with multilib, or a cross compiler such as `i686-linux-gnu-gcc`. No `-m32` is added implicitly. Setting `WIN64=1` requires an x86_64 `CC`.
 
 Run `make print-wibo` to print the output path for the current configuration.
 
@@ -53,7 +53,7 @@ Available configurations:
 - `make CC="gcc -m32" wibo32`: native 32-bit ELF that runs PE32 guests (needs multilib or a 32-bit cross compiler; the default `wibo32` on an x86_64 host is a 64-bit ELF)
 - `make wibo64`: 64-bit Linux loader for PE32+ programs (release)
 - `make DEBUG=1 wibo64`: 64-bit Linux loader for PE32+ programs (debug)
-- macOS: `make` uses `cc`, which must target x86_64 (the sources have x86_64-only assembly). On Apple silicon, use `make CC="cc -arch x86_64"`
+- macOS: `make` builds an x86_64 binary with `gcc` (Apple clang). On Apple silicon, use `make CC="gcc -arch x86_64"`
 
 
 ## Usage
