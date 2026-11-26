@@ -864,6 +864,12 @@ int CDECL msvcrt_tolower(int ch) {
 	return tolower(ch);
 }
 
+// Matches GetCurrentProcessId, which also reports the host pid.
+int CDECL msvcrt__getpid(void) {
+	HOST_CONTEXT_GUARD();
+	return (int)getpid();
+}
+
 // MS wchar_t is 16-bit, so the host wide-string routines (32-bit wchar_t)
 // cannot be reused.
 SIZE_T CDECL msvcrt_wcslen(LPCWSTR str) {

@@ -24,6 +24,7 @@ int CDECL msvcrt_memicmp(const void *buf1, const void *buf2, SIZE_T count);
 void CDECL msvcrt_qsort(void *base, SIZE_T num, SIZE_T width, MSVCRT_COMPARE_FN compare);
 
 SIZE_T CDECL msvcrt_strlen(LPCSTR str);
+int CDECL msvcrt__getpid(void);
 int CDECL msvcrt_strcmp(LPCSTR a, LPCSTR b);
 int CDECL msvcrt_strncmp(LPCSTR a, LPCSTR b, SIZE_T count);
 int CDECL msvcrt__stricmp(LPCSTR a, LPCSTR b);
