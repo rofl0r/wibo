@@ -51,6 +51,9 @@ GUEST_PTR WINAPI RtlLookupFunctionEntry(ULONGLONG ControlPc, GUEST_PTR ImageBase
 GUEST_PTR WINAPI RtlVirtualUnwind(DWORD HandlerType, ULONGLONG ImageBase, ULONGLONG ControlPc, GUEST_PTR FunctionEntry,
 								  GUEST_PTR ContextRecord, GUEST_PTR HandlerData, GUEST_PTR EstablisherFrame,
 								  GUEST_PTR ContextPointers);
+// Implemented in kernel32 (dll/kernel32/winnt.c); the ntdll export forwards to that host function.
+void WINAPI RtlUnwindEx(GUEST_PTR TargetFrame, GUEST_PTR TargetIp, GUEST_PTR ExceptionRecord, GUEST_PTR ReturnValue,
+						GUEST_PTR ContextRecord, GUEST_PTR HistoryTable);
 NTSTATUS WINAPI NtQueryInformationProcess(HANDLE ProcessHandle, PROCESSINFOCLASS ProcessInformationClass,
 										  PVOID ProcessInformation, ULONG ProcessInformationLength,
 										  PULONG ReturnLength);
