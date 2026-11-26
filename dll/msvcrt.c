@@ -1106,6 +1106,37 @@ int CDECL msvcrt__putenv(LPCSTR envstring) {
 	return rc == 0 ? 0 : -1;
 }
 
+// Returns the required size through retLen even when the buffer is too small,
+// so callers can query first with a NULL buffer and len 0.
+int CDECL msvcrt_getenv_s(SIZE_T *retLen, LPSTR buffer, SIZE_T len, LPCSTR name) {
+	HOST_CONTEXT_GUARD();
+	if (!retLen || !name || (buffer && len == 0) || (!buffer && len != 0)) {
+		errno = EINVAL;
+		return EINVAL;
+	}
+	*retLen = 0;
+	if (buffer) {
+		buffer[0] = '\0';
+	}
+	int rc = 0;
+	pthread_mutex_lock(&g_guestStringMutex);
+	const char *value = getenv(name);
+	if (value) {
+		SIZE_T need = strlen(value) + 1;
+		*retLen = need;
+		if (len >= need) {
+			memcpy(buffer, value, need);
+		} else if (len != 0) {
+			rc = ERANGE;
+		}
+	}
+	pthread_mutex_unlock(&g_guestStringMutex);
+	if (rc != 0) {
+		errno = rc;
+	}
+	return rc;
+}
+
 int CDECL msvcrt_setvbuf(void *stream, LPSTR buf, int mode, SIZE_T size) {
 	HOST_CONTEXT_GUARD();
 	FILE *f = hostStream(stream);
