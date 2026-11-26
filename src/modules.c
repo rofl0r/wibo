@@ -644,6 +644,11 @@ static BOOL callDllMain(ModuleInfo *info, DWORD reason, LPVOID reserved) {
 	if (!info->executable || !info->executable->entryPoint) {
 		return TRUE;
 	}
+	if (info->executable->is64Bit) {
+		DEBUG_LOG("  callDllMain: %s is PE32+ (Win64); not supported yet\n", info->normalizedName);
+		kernel32_setLastError(ERROR_BAD_EXE_FORMAT);
+		return FALSE;
+	}
 
 	kernel32_setLastError(ERROR_SUCCESS);
 

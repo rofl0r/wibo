@@ -44,6 +44,7 @@ struct Executable {
 	uint32_t rsrcSize;
 	uintptr_t preferredImageBase;
 	intptr_t relocationDelta;
+	bool is64Bit;
 	uint32_t exportDirectoryRVA;
 	uint32_t exportDirectorySize;
 	uint32_t relocationDirectoryRVA;
