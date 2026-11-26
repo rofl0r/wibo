@@ -47,6 +47,10 @@ VOID WINAPI RtlSetBits(PRTL_BITMAP BitMapHeader, ULONG StartingIndex, ULONG Numb
 BOOLEAN WINAPI RtlAreBitsSet(PRTL_BITMAP BitMapHeader, ULONG StartingIndex, ULONG Length);
 BOOLEAN WINAPI RtlAreBitsClear(PRTL_BITMAP BitMapHeader, ULONG StartingIndex, ULONG Length);
 NTSTATUS WINAPI RtlGetVersion(PRTL_OSVERSIONINFOW lpVersionInformation);
+GUEST_PTR WINAPI RtlLookupFunctionEntry(ULONGLONG ControlPc, GUEST_PTR ImageBase, GUEST_PTR HistoryTable);
+GUEST_PTR WINAPI RtlVirtualUnwind(DWORD HandlerType, ULONGLONG ImageBase, ULONGLONG ControlPc, GUEST_PTR FunctionEntry,
+								  GUEST_PTR ContextRecord, GUEST_PTR HandlerData, GUEST_PTR EstablisherFrame,
+								  GUEST_PTR ContextPointers);
 NTSTATUS WINAPI NtQueryInformationProcess(HANDLE ProcessHandle, PROCESSINFOCLASS ProcessInformationClass,
 										  PVOID ProcessInformation, ULONG ProcessInformationLength,
 										  PULONG ReturnLength);

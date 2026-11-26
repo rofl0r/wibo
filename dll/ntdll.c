@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "context.h"
+#include "context64.h"
 #include "errors.h"
 #include "files.h"
 #include "handles.h"
@@ -14,6 +15,7 @@
 #include "processes.h"
 #include "strutil.h"
 #include "types.h"
+#include "unwind.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -752,6 +754,71 @@ BOOLEAN WINAPI RtlAreBitsClear(PRTL_BITMAP BitMapHeader, ULONG StartingIndex, UL
 
 	DEBUG_LOG("-> %u\n", TRUE);
 	return TRUE;
+}
+
+GUEST_PTR WINAPI RtlLookupFunctionEntry(ULONGLONG ControlPc, GUEST_PTR ImageBase, GUEST_PTR HistoryTable) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("RtlLookupFunctionEntry(0x%llx, %p, %p) ", (unsigned long long)ControlPc, (void *)(uintptr_t)ImageBase,
+			  (void *)(uintptr_t)HistoryTable);
+#ifdef WIBO_GUEST64
+	static __thread WiboRuntimeFunction s_lastEntry;
+	uint64_t moduleBase = 0;
+	if (!wibo_lookupRuntimeFunction(ControlPc, &moduleBase, &s_lastEntry)) {
+		DEBUG_LOG("-> NULL\n");
+		return GUEST_NULL;
+	}
+	if (ImageBase) {
+		*(uint64_t *)(uintptr_t)ImageBase = moduleBase;
+	}
+	DEBUG_LOG("-> %p\n", &s_lastEntry);
+	return (GUEST_PTR)(uintptr_t)&s_lastEntry;
+#else
+	DEBUG_LOG("-> NULL\n");
+	return GUEST_NULL;
+#endif
+}
+
+GUEST_PTR WINAPI RtlVirtualUnwind(DWORD HandlerType, ULONGLONG ImageBase, ULONGLONG ControlPc, GUEST_PTR FunctionEntry,
+								  GUEST_PTR ContextRecord, GUEST_PTR HandlerData, GUEST_PTR EstablisherFrame,
+								  GUEST_PTR ContextPointers) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("RtlVirtualUnwind(%u, 0x%llx, 0x%llx, %p, %p) ", HandlerType, (unsigned long long)ImageBase,
+			  (unsigned long long)ControlPc, (void *)(uintptr_t)FunctionEntry, (void *)(uintptr_t)ContextRecord);
+#ifdef WIBO_GUEST64
+	// Context pointers (non-volatile register locations) are not reported; callers get the unwound values.
+	(void)ContextPointers;
+	if (!ContextRecord) {
+		return GUEST_NULL;
+	}
+	WiboWin64Context *context = (WiboWin64Context *)(uintptr_t)ContextRecord;
+	WiboContext64 unwind;
+	wibo_contextToUnwind(context, &unwind);
+	const WiboRuntimeFunction *function = (const WiboRuntimeFunction *)(uintptr_t)FunctionEntry;
+	WiboFrameInfo info;
+	if (!wibo_unwindWithFunction(&unwind, ControlPc, ImageBase, function, &info)) {
+		DEBUG_LOG("-> NULL (unsupported unwind code)\n");
+		return GUEST_NULL;
+	}
+	wibo_contextFromUnwind(&unwind, context);
+	if (EstablisherFrame) {
+		*(uint64_t *)(uintptr_t)EstablisherFrame = info.establisherFrame;
+	}
+	if (!(info.handlerFlags & HandlerType) || !info.languageHandler) {
+		DEBUG_LOG("-> NULL\n");
+		return GUEST_NULL;
+	}
+	if (HandlerData) {
+		*(uint64_t *)(uintptr_t)HandlerData = info.handlerData;
+	}
+	DEBUG_LOG("-> %p\n", (void *)(uintptr_t)info.languageHandler);
+	return (GUEST_PTR)info.languageHandler;
+#else
+	(void)HandlerData;
+	(void)EstablisherFrame;
+	(void)ContextPointers;
+	DEBUG_LOG("-> NULL\n");
+	return GUEST_NULL;
+#endif
 }
 
 NTSTATUS WINAPI RtlGetVersion(PRTL_OSVERSIONINFOW lpVersionInformation) {

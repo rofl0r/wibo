@@ -361,6 +361,10 @@ FIXTURE_NAMES := test_external_dll test_dll_attach_failure test_thread_notificat
 ifeq ($(TARGET_ARCH),i686)
 FIXTURE_NAMES += test_seh
 endif
+# x64 unwind tables are only registered by the wibo64 build.
+ifeq ($(GUEST64),1)
+FIXTURE_NAMES += test_unwind64
+endif
 FIXTURE_DLL_NAMES := external_exports dll_attach_failure thread_notifications tls_reloc
 
 TEST_LIBS_test_bcrypt := -lbcrypt
