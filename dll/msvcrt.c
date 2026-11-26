@@ -715,6 +715,29 @@ LPSTR CDECL msvcrt_strdup(LPCSTR str) {
 	return duplicateGuestString(str);
 }
 
+// In-place case conversion on the guest buffer. Returns the same pointer, as the MS CRT does.
+LPSTR CDECL msvcrt__strlwr(LPSTR str) {
+	HOST_CONTEXT_GUARD();
+	if (!str) {
+		return NULL;
+	}
+	for (LPSTR p = str; *p; p++) {
+		*p = (char)tolower((unsigned char)*p);
+	}
+	return str;
+}
+
+LPSTR CDECL msvcrt__strupr(LPSTR str) {
+	HOST_CONTEXT_GUARD();
+	if (!str) {
+		return NULL;
+	}
+	for (LPSTR p = str; *p; p++) {
+		*p = (char)toupper((unsigned char)*p);
+	}
+	return str;
+}
+
 LPSTR CDECL msvcrt_strerror(int errnum) {
 	HOST_CONTEXT_GUARD();
 #ifdef WIBO_GUEST64
