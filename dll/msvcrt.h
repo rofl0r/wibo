@@ -52,6 +52,10 @@ SIZE_T CDECL msvcrt_wcslen(LPCWSTR str);
 int CDECL msvcrt_wcscmp(LPCWSTR a, LPCWSTR b);
 int CDECL msvcrt_wcsncmp(LPCWSTR a, LPCWSTR b, SIZE_T count);
 LPWSTR CDECL msvcrt_wcsrchr(LPCWSTR str, WCHAR ch);
+LPWSTR CDECL msvcrt__wcsdup(LPCWSTR str);
+LPWSTR CDECL msvcrt_wcsdup(LPCWSTR str);
+int CDECL msvcrt__wcsicmp(LPCWSTR a, LPCWSTR b);
+int CDECL msvcrt_wcsicmp(LPCWSTR a, LPCWSTR b);
 
 void *CDECL msvcrt___iob_func(void);
 int *CDECL msvcrt___p__commode(void);

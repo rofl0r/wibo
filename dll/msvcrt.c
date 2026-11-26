@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <wctype.h>
 
 extern char **environ;
 
@@ -905,6 +906,55 @@ LPWSTR CDECL msvcrt_wcsrchr(LPCWSTR str, WCHAR ch) {
 		last = str;
 	}
 	return (LPWSTR)last;
+}
+
+static LPWSTR duplicateGuestWideString(LPCWSTR str) {
+	if (!str) {
+		errno = EINVAL;
+		return NULL;
+	}
+	SIZE_T n = 0;
+	while (str[n]) {
+		n++;
+	}
+	n++;
+	WCHAR *copy = guestAlloc(n * sizeof(WCHAR));
+	if (!copy) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	memcpy(copy, str, n * sizeof(WCHAR));
+	return copy;
+}
+
+LPWSTR CDECL msvcrt__wcsdup(LPCWSTR str) {
+	HOST_CONTEXT_GUARD();
+	return duplicateGuestWideString(str);
+}
+
+LPWSTR CDECL msvcrt_wcsdup(LPCWSTR str) {
+	HOST_CONTEXT_GUARD();
+	return duplicateGuestWideString(str);
+}
+
+static int wideCaseCompare(LPCWSTR a, LPCWSTR b) {
+	for (;; a++, b++) {
+		WCHAR ca = (WCHAR)towlower(*a);
+		WCHAR cb = (WCHAR)towlower(*b);
+		if (ca != cb || !ca) {
+			return (int)ca - (int)cb;
+		}
+	}
+}
+
+int CDECL msvcrt__wcsicmp(LPCWSTR a, LPCWSTR b) {
+	HOST_CONTEXT_GUARD();
+	return wideCaseCompare(a, b);
+}
+
+int CDECL msvcrt_wcsicmp(LPCWSTR a, LPCWSTR b) {
+	HOST_CONTEXT_GUARD();
+	return wideCaseCompare(a, b);
 }
 
 void *CDECL msvcrt___iob_func(void) {
