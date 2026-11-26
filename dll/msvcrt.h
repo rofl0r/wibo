@@ -80,7 +80,7 @@ void CDECL msvcrt___set_app_type(int type);
 void CDECL msvcrt__lock(int locknum);
 void CDECL msvcrt__unlock(int locknum);
 void CDECL msvcrt___setusermatherr(void *handler);
-int CDECL msvcrt___C_specific_handler(void);
+int CDECL msvcrt___C_specific_handler(void *record, void *frame, void *context, void *dispatch);
 int CDECL msvcrt____mb_cur_max_func(void);
 unsigned int CDECL msvcrt____lc_codepage_func(void);
 int *CDECL msvcrt__errno(void);

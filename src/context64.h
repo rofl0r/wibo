@@ -116,12 +116,14 @@ static inline void wibo_contextFromUnwind(const WiboContext64 *in, WiboWin64Cont
 	context->Rip = in->rip;
 }
 
-// Values returned by a language handler. They match the winnt.h EXCEPTION_DISPOSITION enumeration.
+// Values returned by a language handler. They match the winnt.h EXCEPTION_DISPOSITION enumeration, except
+// WiboExceptionUnsupportedUnwind, which a handler returns when it needs an unwind that wibo does not perform yet.
 typedef enum {
 	WiboExceptionContinueExecution = 0,
 	WiboExceptionContinueSearch = 1,
 	WiboExceptionNestedException = 2,
 	WiboExceptionCollidedUnwind = 3,
+	WiboExceptionUnsupportedUnwind = 4,
 } WiboExceptionDisposition;
 
 // DISPATCHER_CONTEXT (winnt.h, 0x50 bytes). Handlers receive a pointer to it as their fourth argument.

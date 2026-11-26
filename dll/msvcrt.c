@@ -2,9 +2,11 @@
 
 #include "common.h"
 #include "context.h"
+#include "context64.h"
 #include "cutil.h"
 #include "files.h"
 #include "heap.h"
+#include "kernel32/errhandlingapi.h"
 #include "kernel32/internal.h"
 #include "modules.h"
 #include "strutil.h"
@@ -1662,10 +1664,68 @@ void CDECL msvcrt___setusermatherr(void *handler) {
 	(void)handler;
 }
 
-// EXCEPTION_CONTINUE_SEARCH: no guest __try/__except handlers are supported.
-int CDECL msvcrt___C_specific_handler(void) {
+// Win64 guests get real scope-table dispatch. Other builds have no guest SEH, so the search always continues.
+#if defined(WIBO_GUEST64)
+typedef struct {
+	uint32_t BeginAddress;
+	uint32_t EndAddress;
+	uint32_t HandlerAddress;
+	uint32_t JumpTarget;
+} WiboScopeRecord;
+
+typedef struct {
+	uint32_t Count;
+	WiboScopeRecord ScopeRecord[];
+} WiboScopeTable;
+
+typedef struct {
+	EXCEPTION_RECORD *ExceptionRecord;
+	WiboWin64Context *ContextRecord;
+} WiboExceptionPointers;
+
+typedef int32_t(__attribute__((ms_abi)) * WiboExceptionFilter)(WiboExceptionPointers *, uint64_t);
+
+// Walks the C scope table for the first __except scope covering the faulting pc. Filters run in the first pass and
+// their results are honoured. __finally scopes run only while unwinding, which wibo does not perform.
+static WiboExceptionDisposition cSpecificHandler(EXCEPTION_RECORD *record, uint64_t frame, WiboWin64Context *context,
+												 WiboDispatcherContext *dispatch) {
+	const WiboScopeTable *table = dispatch->HandlerData;
+	uint64_t base = dispatch->ImageBase;
+	uint64_t pc = dispatch->ControlPc;
+	for (uint32_t i = 0; i < table->Count; i++) {
+		const WiboScopeRecord *scope = &table->ScopeRecord[i];
+		if (pc < base + scope->BeginAddress || pc >= base + scope->EndAddress || !scope->JumpTarget) {
+			continue;
+		}
+		if (scope->HandlerAddress != EXCEPTION_EXECUTE_HANDLER) {
+			WiboExceptionPointers ptrs = {record, context};
+			WiboExceptionFilter filter = (WiboExceptionFilter)(uintptr_t)(base + scope->HandlerAddress);
+			LONG result = filter(&ptrs, frame);
+			if (result == EXCEPTION_CONTINUE_SEARCH) {
+				continue;
+			}
+			if (result == EXCEPTION_CONTINUE_EXECUTION) {
+				return WiboExceptionContinueExecution;
+			}
+		}
+		// EXECUTE_HANDLER needs the unwind to JumpTarget, which is not implemented.
+		return WiboExceptionUnsupportedUnwind;
+	}
+	return WiboExceptionContinueSearch;
+}
+#endif
+
+int CDECL msvcrt___C_specific_handler(void *record, void *frame, void *context, void *dispatch) {
 	HOST_CONTEXT_GUARD();
+#if defined(WIBO_GUEST64)
+	return cSpecificHandler(record, (uint64_t)(uintptr_t)frame, context, dispatch);
+#else
+	(void)record;
+	(void)frame;
+	(void)context;
+	(void)dispatch;
 	return 1;
+#endif
 }
 
 int CDECL msvcrt____mb_cur_max_func(void) {
