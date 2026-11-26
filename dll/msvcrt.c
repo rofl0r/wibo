@@ -1457,6 +1457,35 @@ int CDECL msvcrt__wgetenv_s(SIZE_T *retLen, LPWSTR buffer, SIZE_T len, LPCWSTR n
 	return rc;
 }
 
+// Like _putenv_s, an empty value deletes the variable. Names and values are
+// converted one byte per unit, as in _wgetenv_s.
+int CDECL msvcrt__wputenv_s(LPCWSTR name, LPCWSTR value) {
+	HOST_CONTEXT_GUARD();
+	if (!name || !value) {
+		errno = EINVAL;
+		return EINVAL;
+	}
+	char *narrowName = wideStringToString(name, -1);
+	char *narrowValue = wideStringToString(value, -1);
+	int err = 0;
+	if (narrowName[0] == '\0' || strchr(narrowName, '=')) {
+		err = EINVAL;
+	} else {
+		pthread_mutex_lock(&g_guestStringMutex);
+		int rc = narrowValue[0] ? setenv(narrowName, narrowValue, 1) : unsetenv(narrowName);
+		if (rc != 0) {
+			err = errno;
+		}
+		pthread_mutex_unlock(&g_guestStringMutex);
+	}
+	free(narrowName);
+	free(narrowValue);
+	if (err != 0) {
+		errno = err;
+	}
+	return err;
+}
+
 int CDECL msvcrt_setvbuf(void *stream, LPSTR buf, int mode, SIZE_T size) {
 	HOST_CONTEXT_GUARD();
 	FILE *f = hostStream(stream);
