@@ -7,6 +7,7 @@
 #include "heap.h"
 #include "kernel32/internal.h"
 #include "modules.h"
+#include "strutil.h"
 
 #include "msvcrt_trampolines.h"
 
@@ -1415,6 +1416,41 @@ int CDECL msvcrt_getenv_s(SIZE_T *retLen, LPSTR buffer, SIZE_T len, LPCSTR name)
 		}
 	}
 	pthread_mutex_unlock(&g_guestStringMutex);
+	if (rc != 0) {
+		errno = rc;
+	}
+	return rc;
+}
+
+// Sizes and the buffer are in UTF-16 units. The value is converted the same
+// way as the other wide strings in this file: one byte per unit.
+int CDECL msvcrt__wgetenv_s(SIZE_T *retLen, LPWSTR buffer, SIZE_T len, LPCWSTR name) {
+	HOST_CONTEXT_GUARD();
+	if (!retLen || !name || (buffer && len == 0) || (!buffer && len != 0)) {
+		errno = EINVAL;
+		return EINVAL;
+	}
+	*retLen = 0;
+	if (buffer) {
+		buffer[0] = 0;
+	}
+	char *narrowName = wideStringToString(name, -1);
+	int rc = 0;
+	pthread_mutex_lock(&g_guestStringMutex);
+	const char *value = getenv(narrowName);
+	if (value) {
+		uint16_t *wide = stringToWideString(value, SIZE_MAX);
+		SIZE_T need = strlen(value) + 1;
+		*retLen = need;
+		if (len >= need) {
+			memcpy(buffer, wide, need * sizeof(uint16_t));
+		} else if (len != 0) {
+			rc = ERANGE;
+		}
+		free(wide);
+	}
+	pthread_mutex_unlock(&g_guestStringMutex);
+	free(narrowName);
 	if (rc != 0) {
 		errno = rc;
 	}
