@@ -98,11 +98,11 @@ int main(void) {
 
 	TEST_CHECK((uintptr_t)mod != (uintptr_t)preferred);
 
-	FARPROC rawGet = GetProcAddress(mod, "tls_get_template_value@0");
-	FARPROC rawAddr = GetProcAddress(mod, "tls_template_address@0");
-	FARPROC rawHits = GetProcAddress(mod, "tls_callback_hits@0");
-	FARPROC rawDisableResult = GetProcAddress(mod, "tls_disable_thread_library_calls_result@0");
-	FARPROC rawIndex = GetProcAddress(mod, "tls_module_index@0");
+	FARPROC rawGet = GetProcAddress(mod, STDCALL_EXPORT_NAME(tls_get_template_value, 0));
+	FARPROC rawAddr = GetProcAddress(mod, STDCALL_EXPORT_NAME(tls_template_address, 0));
+	FARPROC rawHits = GetProcAddress(mod, STDCALL_EXPORT_NAME(tls_callback_hits, 0));
+	FARPROC rawDisableResult = GetProcAddress(mod, STDCALL_EXPORT_NAME(tls_disable_thread_library_calls_result, 0));
+	FARPROC rawIndex = GetProcAddress(mod, STDCALL_EXPORT_NAME(tls_module_index, 0));
 	TEST_CHECK(rawGet != NULL);
 	TEST_CHECK(rawAddr != NULL);
 	TEST_CHECK(rawHits != NULL);

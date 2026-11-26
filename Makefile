@@ -198,8 +198,13 @@ SHA256_msvcr100 := 624d89f0cfb67d9153582910e81d3748971959a16d3872e4503afd7708912
 SHA256_msvcr120 := f1dd6500a7aa4cf58c3c17f3d3b091f00138f7b465c363efef4bf20119a1bcaf
 SHA256_ucrtbase := 1d5e5bbf3a766e031d7d208659c097c944985cbcbc2725d3f926f220d6e22c16
 
-ifeq ($(WIBO_ENABLE_WINE_DLLS),1)
+ifeq ($(WIN64),1)
+# Win64 guests use the native msvcrt subset in dll/msvcrt64.c; the PE32 Wine CRT DLLs would fail the bitness guard.
+EMBEDDED_WINE_DLLS :=
+NATIVE_CRT_DLLS := msvcrt
+else ifeq ($(WIBO_ENABLE_WINE_DLLS),1)
 EMBEDDED_WINE_DLLS := $(WINE_DLLS)
+NATIVE_CRT_DLLS :=
 endif
 EMBED_DLL_SRCS := $(addprefix dll/,$(addsuffix .c,$(EMBEDDED_WINE_DLLS)))
 
@@ -207,10 +212,16 @@ EMBED_DLL_SRCS := $(addprefix dll/,$(addsuffix .c,$(EMBEDDED_WINE_DLLS)))
 WINE_DLL_FLAG_NAMES := crtdll:CRTDLL msvcrt:MSVCRT msvcirt:MSVCIRT msvcrt20:MSVCRT20 \
 	msvcrt40:MSVCRT40 msvcr71:MSVCR71 msvcr90:MSVCR90 msvcr100:MSVCR100 msvcr120:MSVCR120 \
 	ucrtbase:UCRTBASE
-WINE_DLL_DEFS := $(foreach p,$(WINE_DLL_FLAG_NAMES),-DWIBO_HAS_$(word 2,$(subst :, ,$(p)))=$(if $(filter $(word 1,$(subst :, ,$(p))),$(EMBEDDED_WINE_DLLS)),1,0))
+WINE_DLL_DEFS := $(foreach p,$(WINE_DLL_FLAG_NAMES),-DWIBO_HAS_$(word 2,$(subst :, ,$(p)))=$(if $(filter $(word 1,$(subst :, ,$(p))),$(EMBEDDED_WINE_DLLS) $(NATIVE_CRT_DLLS)),1,0))
+ifeq ($(WIN64),1)
+DLL_SRCS += dll/msvcrt64.c
+endif
 
 ALL_TRAMP_MODULES := advapi32 bcrypt entry mscoree version rpcrt4 shlwapi ws2 vcruntime lmgr \
 	ole32 oleaut32 user32 ntdll kernel32
+ifeq ($(WIN64),1)
+ALL_TRAMP_MODULES += msvcrt
+endif
 # One thunk set per build: the Win64 runtime generates Win64-ABI thunks, every other build generates the guest-ABI set.
 TRAMP_MODULES := $(ALL_TRAMP_MODULES)
 ifeq ($(WIN64),1)
@@ -233,6 +244,7 @@ TRAMP_HDRS_oleaut32 := dll/oleaut32.h
 TRAMP_HDRS_user32 := dll/user32.h
 TRAMP_HDRS_ntdll := dll/ntdll.h
 TRAMP_HDRS_kernel32 := $(addprefix dll/kernel32/,$(addsuffix .h,$(KERNEL32_NAMES)))
+TRAMP_HDRS_msvcrt := dll/msvcrt.h
 TRAMP_STAMPS := $(foreach m,$(TRAMP_MODULES),$(GEN_DIR)/$(m)_trampolines.stamp)
 
 # gentramp writes the .S and .h pair; a stamp file records the run so parallel builds never invoke it twice.
@@ -375,7 +387,7 @@ FIXTURE_NAMES := test_external_dll test_dll_attach_failure test_thread_notificat
 	test_rtl test_rtl_bitmap test_ntquery test_ntqueryfile test_ntreadfile test_ntwritefile \
 	test_pipe_io test_namedpipe test_sysdir test_stringapiset test_srw_lock test_init_once \
 	test_init_once_execute test_gettickcount64 test_slist_interlocked test_locale_ex \
-	test_sync_ex test_wait_on_address test_env_strings
+	test_sync_ex test_wait_on_address test_env_strings test_msvcrt_printf
 FIXTURE_DLL_NAMES := external_exports dll_attach_failure thread_notifications tls_reloc
 
 TEST_LIBS_test_bcrypt := -lbcrypt

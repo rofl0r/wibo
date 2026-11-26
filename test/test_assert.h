@@ -25,6 +25,13 @@
         } \
     } while (0)
 
+// __stdcall exports are name-decorated only on i386 (name@bytes); x64 uses the bare name.
+#if defined(_WIN64) || defined(__x86_64__)
+#define STDCALL_EXPORT_NAME(name, bytes) #name
+#else
+#define STDCALL_EXPORT_NAME(name, bytes) #name "@" #bytes
+#endif
+
 #define TEST_CHECK_EQ(expected, actual) \
     do { \
         long long _expected_value = (long long)(expected); \

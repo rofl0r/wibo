@@ -1,0 +1,60 @@
+#pragma once
+
+#include "types.h"
+
+// Guest-ABI callbacks; gentramp emits call_<typedef> helpers for these.
+typedef void(_CC_CDECL *MSVCRT_PVFV)(void);
+typedef int(_CC_CDECL *MSVCRT_ONEXIT_FN)(void);
+typedef int(_CC_CDECL *MSVCRT_COMPARE_FN)(const void *, const void *);
+
+// Win64 msvcrt subset. Export names are these identifiers with the "msvcrt_" prefix stripped.
+// FILE* arguments are pointers into the MS-layout iob array returned by __iob_func.
+// Variadic arguments are forwarded in integer registers and stack slots only; floating-point varargs are not supported.
+void *CDECL msvcrt_malloc(SIZE_T size);
+void *CDECL msvcrt_calloc(SIZE_T count, SIZE_T size);
+void CDECL msvcrt_free(void *ptr);
+void *CDECL msvcrt_memcpy(void *dest, const void *src, SIZE_T count);
+void *CDECL msvcrt_memset(void *dest, int ch, SIZE_T count);
+int CDECL msvcrt_memcmp(const void *buf1, const void *buf2, SIZE_T count);
+void CDECL msvcrt_qsort(void *base, SIZE_T num, SIZE_T width, MSVCRT_COMPARE_FN compare);
+
+SIZE_T CDECL msvcrt_strlen(LPCSTR str);
+int CDECL msvcrt_strcmp(LPCSTR a, LPCSTR b);
+int CDECL msvcrt_strncmp(LPCSTR a, LPCSTR b, SIZE_T count);
+LPSTR CDECL msvcrt_strcpy(LPSTR dest, LPCSTR src);
+LPSTR CDECL msvcrt_strncpy(LPSTR dest, LPCSTR src, SIZE_T count);
+LPSTR CDECL msvcrt_strcat(LPSTR dest, LPCSTR src);
+LPSTR CDECL msvcrt_strchr(LPCSTR str, int ch);
+LPSTR CDECL msvcrt_strrchr(LPCSTR str, int ch);
+LPSTR CDECL msvcrt_strerror(int errnum);
+int CDECL msvcrt_tolower(int ch);
+SIZE_T CDECL msvcrt_wcslen(LPCWSTR str);
+int CDECL msvcrt_wcscmp(LPCWSTR a, LPCWSTR b);
+int CDECL msvcrt_wcsncmp(LPCWSTR a, LPCWSTR b, SIZE_T count);
+LPWSTR CDECL msvcrt_wcsrchr(LPCWSTR str, WCHAR ch);
+
+void *CDECL msvcrt___iob_func(void);
+int CDECL msvcrt_fprintf(void *stream, LPCSTR format, ...);
+int CDECL msvcrt_vfprintf(void *stream, LPCSTR format, void *ap);
+int CDECL msvcrt_printf(LPCSTR format, ...);
+int CDECL msvcrt_fputc(int ch, void *stream);
+SIZE_T CDECL msvcrt_fwrite(const void *buf, SIZE_T size, SIZE_T count, void *stream);
+int CDECL msvcrt_puts(LPCSTR str);
+
+void CDECL msvcrt_exit(int code);
+void CDECL msvcrt__cexit(void);
+void CDECL msvcrt__amsg_exit(int code);
+void CDECL msvcrt_abort(void);
+void *CDECL msvcrt__onexit(MSVCRT_ONEXIT_FN fn);
+void CDECL msvcrt__initterm(MSVCRT_PVFV *begin, MSVCRT_PVFV *end);
+int CDECL msvcrt___getmainargs(int *argc, char ***argv, char ***envp, int doWildCard, void *startInfo);
+void CDECL msvcrt___set_app_type(int type);
+void CDECL msvcrt__lock(int locknum);
+void CDECL msvcrt__unlock(int locknum);
+void CDECL msvcrt___setusermatherr(void *handler);
+int CDECL msvcrt___C_specific_handler(void);
+int CDECL msvcrt____mb_cur_max_func(void);
+unsigned int CDECL msvcrt____lc_codepage_func(void);
+int *CDECL msvcrt__errno(void);
+void *CDECL msvcrt_localeconv(void);
+void *CDECL msvcrt_signal(int sig, void *handler);

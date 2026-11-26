@@ -1645,17 +1645,35 @@ static void emitThunkWin64(Buf *o, const Sig *f) {
     const long kHomeOff = 16;  /* [rbp+16] is the first shadow slot: rbp = entry rsp - 8 */
     const long kStackOff = 48; /* [rbp+48] is the 5th argument */
     const int kXmmSaved = 10;  /* xmm6..xmm15 */
+    /* Variadic guests: slots past the declared parameters are forwarded as 64-bit integers, so the
+     * host's va_arg sees the MS argument list. The host only reads the slots the format consumes. */
+    const int kVarargSlots = 16;
 
-    for (int i = 0; i < f->nargs; i++) {
-        if (isFloatTy(f->args[i]))
+    if (f->variadic && f->nargs > kVarargSlots)
+        fatal("variadic function %s has too many fixed arguments", f->name);
+    static Ty *sU64;
+    Ty *slotArgs[kVarargSlots];
+    int nslots = f->nargs;
+    Ty **args = f->args;
+    if (f->variadic) {
+        if (!sU64)
+            sU64 = newTy(TY_ULONG);
+        nslots = kVarargSlots;
+        for (int i = 0; i < kVarargSlots; i++)
+            slotArgs[i] = i < f->nargs ? f->args[i] : sU64;
+        args = slotArgs;
+    }
+
+    for (int i = 0; i < nslots; i++) {
+        if (isFloatTy(args[i]))
             fatal("floating-point argument %d of %s is not supported by Win64 thunks", i, f->name);
-        if (typeSize(f->args[i]) > 8)
+        if (typeSize(args[i]) > 8)
             fatal("argument %d of %s is larger than 8 bytes", i, f->name);
     }
     if (f->ret->kind != TY_VOID && typeSize(f->ret) > 8)
         fatal("return size %ld not supported for %s", typeSize(f->ret), f->name);
 
-    Layout tgt = computeLayout(f->args, f->nargs, CC_C, ARCH_X86_64, 0, 0);
+    Layout tgt = computeLayout(args, nslots, CC_C, ARCH_X86_64, 0, 0);
     long stackArgs = (tgt.stackSize + 15) & ~15L;
     long frame = stackArgs + kXmmSaved * 16;
 
@@ -1666,10 +1684,10 @@ static void emitThunkWin64(Buf *o, const Sig *f) {
     bline(o, "\tsub rsp, %ld", frame);
     for (int k = 0; k < kXmmSaved; k++)
         bline(o, "\tmovups xmmword ptr [rsp+%ld], xmm%d", stackArgs + 16L * k, 6 + k);
-    for (int i = 0; i < f->nargs && i < 4; i++)
+    for (int i = 0; i < nslots && i < 4; i++)
         bline(o, "\tmov qword ptr [rbp+%ld], %s", kHomeOff + 8L * i, kWin64Regs[i]);
 
-    for (int i = 0; i < f->nargs; i++) {
+    for (int i = 0; i < nslots; i++) {
         long srcOff = i < 4 ? kHomeOff + 8L * i : kStackOff + 8L * (i - 4);
         const Place *t = &tgt.places[i];
         if (t->onStack) {

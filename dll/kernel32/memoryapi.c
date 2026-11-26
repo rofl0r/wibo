@@ -21,8 +21,8 @@
 #include <unistd.h>
 
 static const size_t kVirtualAllocationGranularity = 64 * 1024;
-static const uintptr_t kProcessAddressLimit = 0x80000000;
-static const uintptr_t kHighestUserAddress = 0x7FFEFFFF;
+static const uint64_t kProcessAddressLimit = GUEST_IS_64BIT ? UINT64_C(0x800000000000) : UINT64_C(0x80000000);
+static const uint64_t kHighestUserAddress = GUEST_IS_64BIT ? UINT64_C(0x7FFFFFFEFFFF) : UINT64_C(0x7FFEFFFF);
 static const uintptr_t kSharedUserDataAddr = 0x7FFE0000;
 static const uint64_t kMaxOffT = sizeof(off_t) == 8 ? (uint64_t)INT64_MAX : (uint64_t)INT32_MAX;
 

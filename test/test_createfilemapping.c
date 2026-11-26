@@ -179,15 +179,21 @@ static void test_fixed_address_view_does_not_replace_allocation(void) {
 }
 
 static void test_fixed_address_view_at_top_of_user_range_fails(void) {
-	// Not large-address-aware, so user addresses end at 0x7FFEFFFF.
+	// Not large-address-aware, so user addresses end at 0x7FFEFFFF. x64 user addresses end at 0x7FFFFFFEFFFF.
 	static const struct {
 		uintptr_t base;
 		DWORD size;
 		DWORD error;
 	} cases[] = {
+#if defined(_WIN64) || defined(__x86_64__)
+		// The base is past the end. Wine maps these views anyway; Windows refuses them.
+		{0x7FFFFFFF0000u, 0x10000, ERROR_INVALID_PARAMETER},
+		{0x800000000000u, 0x10000, ERROR_INVALID_PARAMETER},
+#else
 		// The base is past the end. Wine maps these views anyway; Windows refuses them.
 		{0x80000000u, 0x10000, ERROR_INVALID_PARAMETER},
 		{0x7FFF0000u, 0x10000, ERROR_INVALID_PARAMETER},
+#endif
 		// The view covers the shared user data page at 0x7FFE0000.
 		{0x7FFE0000u, 0x10000, ERROR_INVALID_ADDRESS},
 		{0x7FFE0000u, 0x10001, ERROR_INVALID_ADDRESS},

@@ -15,9 +15,9 @@ int main(void) {
     HMODULE mod = LoadLibraryA("external_exports.dll");
     TEST_CHECK_MSG(mod != NULL, "LoadLibraryA failed: %lu", (unsigned long)GetLastError());
 
-    FARPROC raw_add_numbers = GetProcAddress(mod, "add_numbers@8");
-    FARPROC raw_was_attached = GetProcAddress(mod, "was_attached@0");
-    FARPROC raw_observed_main = GetProcAddress(mod, "observed_main_module@0");
+    FARPROC raw_add_numbers = GetProcAddress(mod, STDCALL_EXPORT_NAME(add_numbers, 8));
+    FARPROC raw_was_attached = GetProcAddress(mod, STDCALL_EXPORT_NAME(was_attached, 0));
+    FARPROC raw_observed_main = GetProcAddress(mod, STDCALL_EXPORT_NAME(observed_main_module, 0));
     TEST_CHECK_MSG(raw_add_numbers != NULL, "GetProcAddress(add_numbers@8) failed: %lu", (unsigned long)GetLastError());
     TEST_CHECK_MSG(raw_was_attached != NULL, "GetProcAddress(was_attached@0) failed: %lu", (unsigned long)GetLastError());
     TEST_CHECK_MSG(raw_observed_main != NULL, "GetProcAddress(observed_main_module@0) failed: %lu", (unsigned long)GetLastError());
