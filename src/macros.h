@@ -52,10 +52,11 @@
 #else
 #define ASM_SIZE_TYPE "long"
 #endif
+// .pushsection/.popsection so that compiler output after the blob stays in .text.
 #if __ELF__
-#define ASM_RODATA_SECTION ".section .rodata"
+#define ASM_RODATA_SECTION ".pushsection .rodata"
 #else
-#define ASM_RODATA_SECTION ".section __TEXT, __const"
+#define ASM_RODATA_SECTION ".pushsection __TEXT, __const"
 #endif
 
 // clang-format off
@@ -65,7 +66,8 @@
         SYMBOL_NAME_STR(symbol) ":\n"                             \
         ".incbin \"" file "\"\n"                                  \
         ".globl " SYMBOL_NAME_STR(GLUE(symbol, End)) "\n"         \
-        SYMBOL_NAME_STR(GLUE(symbol, End)) ":\n");                \
+        SYMBOL_NAME_STR(GLUE(symbol, End)) ":\n"                  \
+        ".popsection\n");                                         \
     extern const uint8_t symbol[];                                \
     extern const uint8_t GLUE(symbol, End)[];
 // clang-format on
