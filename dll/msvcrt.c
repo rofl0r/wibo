@@ -49,24 +49,42 @@ static MSVCRT_PVFV g_onexit[MSVCRT_ONEXIT_MAX];
 static size_t g_onexitCount;
 
 // On wibo32 the host errno is thread-local storage above 4 GB, so guests see a
-// mirror cell instead. Every msvcrt entry point copies a guest write into the
-// host errno on entry, and copies the host errno back into the cell on exit.
-// Errno changes made by non-msvcrt shims only reach the guest after the next
-// msvcrt call.
+// mirror cell instead. Like POSIX errno, the cell is per thread. Every msvcrt
+// entry point copies a guest write into the host errno on entry, and copies the
+// host errno back into the cell on exit. Errno changes made by non-msvcrt shims
+// only reach the guest after the next msvcrt call.
 #ifndef WIBO_GUEST64
-static int g_errnoCell;
-static int g_errnoShadow;
+static __thread int *t_errnoCell;
+static __thread int t_errnoShadow;
+// Used only if the per-thread cell cannot be allocated.
+static int g_errnoFallback;
+
+static int *errnoCell(void) {
+	if (!t_errnoCell) {
+		int *cell = wibo_heap_guestMalloc(sizeof *cell);
+		if (!cell) {
+			return &g_errnoFallback;
+		}
+		*cell = 0;
+		t_errnoCell = cell;
+	}
+	return t_errnoCell;
+}
 
 static int errnoSyncIn(void) {
-	if (g_errnoCell != g_errnoShadow) {
-		errno = g_errnoCell;
+	int *cell = errnoCell();
+	if (*cell != t_errnoShadow) {
+		errno = *cell;
 	}
 	return 0;
 }
 
 static void errnoSyncOut(const int *unused) {
 	(void)unused;
-	g_errnoShadow = g_errnoCell = errno;
+	int hostErrno = errno;
+	int *cell = errnoCell();
+	*cell = hostErrno;
+	t_errnoShadow = hostErrno;
 }
 
 // Redefined for this file only so that every msvcrt entry point gets the sync.
@@ -1137,7 +1155,7 @@ int *CDECL msvcrt__errno(void) {
 #ifdef WIBO_GUEST64
 	return &errno;
 #else
-	return &g_errnoCell;
+	return errnoCell();
 #endif
 }
 

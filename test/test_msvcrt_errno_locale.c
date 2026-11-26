@@ -8,6 +8,18 @@
 
 #include "test_assert.h"
 
+static int g_workerErrno;
+
+static DWORD WINAPI errnoWorker(LPVOID unused) {
+	(void)unused;
+	FILE *f = fopen("msvcrt_errno_missing_dir/none.txt", "rb");
+	if (f) {
+		fclose(f);
+	}
+	g_workerErrno = errno;
+	return 0;
+}
+
 int main(void) {
 	// getenv results must stay valid across later getenv calls and heap reuse.
 	const char *path = getenv("PATH");
@@ -43,6 +55,15 @@ int main(void) {
 	FILE *f = fopen("msvcrt_errno_missing_dir/none.txt", "rb");
 	TEST_CHECK(f == NULL);
 	TEST_CHECK_EQ(ENOENT, errno);
+
+	// errno is per thread: a worker's failing call must not change ours.
+	errno = 7;
+	HANDLE thread = CreateThread(NULL, 0, errnoWorker, NULL, 0, NULL);
+	TEST_CHECK(thread != NULL);
+	TEST_CHECK_EQ(WAIT_OBJECT_0, WaitForSingleObject(thread, 5000));
+	CloseHandle(thread);
+	TEST_CHECK_EQ(ENOENT, g_workerErrno);
+	TEST_CHECK_EQ(7, errno);
 
 	return 0;
 }
