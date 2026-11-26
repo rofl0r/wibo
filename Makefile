@@ -363,7 +363,7 @@ FIXTURE_NAMES += test_seh
 endif
 # x64 unwind tables are only registered by the wibo64 build.
 ifeq ($(GUEST64),1)
-FIXTURE_NAMES += test_unwind64
+FIXTURE_NAMES += test_unwind64 test_seh64
 endif
 FIXTURE_DLL_NAMES := external_exports dll_attach_failure thread_notifications tls_reloc
 
