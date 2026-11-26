@@ -409,11 +409,12 @@ check-mingw:
 
 fixtures: $(FIXTURE_OUTS)
 
+# TEST_RUNNER wraps each fixture run. Set TEST_RUNNER=qemu-i386 to run a native i686 build on an x86_64 host.
 test: $(WIBO) $(TEST_OUTS)
 	@fail=0; \
 	for t in $(TEST_SELECTED); do \
 		echo "[ RUN  ] wibo.$$t"; \
-		if (cd test && $(TEST_TIMEOUT_CMD) $(abspath $(WIBO)) $(abspath $(TEST_BIN_DIR))/$$t.exe); then \
+		if (cd test && $(TEST_TIMEOUT_CMD) $(TEST_RUNNER) $(abspath $(WIBO)) $(abspath $(TEST_BIN_DIR))/$$t.exe); then \
 			echo "[  OK  ] wibo.$$t"; \
 		else \
 			echo "[ FAIL ] wibo.$$t"; fail=1; \

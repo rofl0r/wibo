@@ -177,7 +177,8 @@ It serves the bundled DLLs, and any children it spawns, from memory.
 - `make test-bundle` checks a bundle with a DLL, a bundle without
   DLLs, argument pass-through, and the packer's name and architecture
   rules. It runs for every runtime built. To run an i386 build on a
-  64-bit host, set `BUNDLE_RUNNER=qemu-i386`.
+  64-bit host, set `BUNDLE_RUNNER=qemu-i386`. `TEST_RUNNER=qemu-i386`
+  does the same for `make test`.
 
 ## Known limitations
 
@@ -204,9 +205,11 @@ It serves the bundled DLLs, and any children it spawns, from memory.
   read, so the report is not produced there.
 - The 32-bit guest's `errno` lives in a per-thread cell. The cell is
   not freed when its thread exits.
-- Native i686 builds (`CC="gcc -m32"`) do not sync `errno` at shim
-  boundaries. Only the x86_64-hosted 32-bit loader has the hook, and
-  native 32-bit binaries cannot run in the development sandbox.
+- Native i686 builds (`CC="gcc -m32"`) run under `qemu-i386` with
+  `TEST_RUNNER=qemu-i386 make test`. Under qemu-user,
+  `clone(CLONE_PIDFD)` with no exit signal returns `EINVAL`, though
+  the x86_64 kernel accepts it. `test_processes` and
+  `test_unhandled_exception` fail there for that reason only.
 - The `setlocale` result for 32-bit guests comes from one shared slot.
   A call from another thread can replace it, so an older pointer may
   dangle.
