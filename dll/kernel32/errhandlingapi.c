@@ -291,15 +291,15 @@ __attribute__((no_stack_protector)) static bool resumeGuestFault(TEB *teb, const
 
 #if defined(WIBO_GUEST64)
 // One record per host-to-guest call, pushed by emitThunkWin64 (tools/gentramp.c). Records form a chain through
-// TEB.GuestCallFrame, innermost first, and live on the native stack. The layout must match the thunk's pushes.
+// TEB.GuestCallFrame, innermost first, and live on the native stack. The layout must match the thunk's pushes. The
+// guest's stack pointer at the call is the address just past the record, where the thunk's shadow space begins.
 typedef struct GuestCallRecord {
 	struct GuestCallRecord *prev;
 	uint64_t r15, r14, r13, r12, rbx, rsi, rdi, rbp;
 	uint64_t returnAddress;
-	uint64_t guestRsp;
 } GuestCallRecord;
 
-_Static_assert(sizeof(GuestCallRecord) == 88, "GuestCallRecord must match the emitThunkWin64 frame layout");
+_Static_assert(sizeof(GuestCallRecord) == 80, "GuestCallRecord must match the emitThunkWin64 frame layout");
 
 typedef WiboExceptionDisposition(__attribute__((ms_abi)) * WiboLanguageHandler)(EXCEPTION_RECORD *, uint64_t,
 																		  WiboWin64Context *,
@@ -314,7 +314,7 @@ static void guestCallContext(const GuestCallRecord *rec, WiboWin64Context *ctx) 
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->ContextFlags = CONTEXT_AMD64_CONTROL | CONTEXT_AMD64_INTEGER;
 	ctx->Rip = rec->returnAddress;
-	ctx->Rsp = rec->guestRsp;
+	ctx->Rsp = (uint64_t)(uintptr_t)rec + sizeof(*rec);
 	ctx->Rbp = rec->rbp;
 	ctx->Rbx = rec->rbx;
 	ctx->Rsi = rec->rsi;
@@ -359,18 +359,30 @@ static void dropAbandonedGuestCallRecords(uint64_t rsp) {
 	currentThreadTeb->GuestCallFrame = rec;
 }
 
-// Walks guest frames outward from start and runs the language handler of each frame that has one. The walk ends at
-// the first frame whose code lies outside every registered module, which is the host boundary. ContinueSearch moves
-// to the caller frame. Returns true if a handler returned ContinueExecution, leaving exCtx as the context to resume.
-// Handlers receive exCtx as their ContextRecord so they can change it.
+// Walks the stack outward from start and runs the language handler of each guest frame that has one. ContinueSearch
+// moves to the caller frame. When the caller is host code, the next guest frame is the one recorded by the nearest
+// outer guest call record whose return address is guest code, so host frames such as qsort are skipped. nextRec is
+// the first record not yet consumed. Returns true if a handler returned ContinueExecution, leaving exCtx as the
+// context to resume. Handlers receive exCtx as their ContextRecord so they can change it.
 static bool guestDispatchFrames(EXCEPTION_RECORD *record, WiboWin64Context *exCtx, const WiboContext64 *start,
-								bool startIsCaller) {
+								bool startIsCaller, const GuestCallRecord *nextRec) {
 	WiboContext64 frame = *start;
 	bool isCaller = startIsCaller;
 	for (int depth = 0; depth < kMaxGuestFrames; depth++) {
 		uint64_t controlPc = isCaller ? frame.rip - 1 : frame.rip;
 		if (!wibo_isRegisteredCode(controlPc)) {
-			return false;
+			while (nextRec && !wibo_isRegisteredCode(nextRec->returnAddress)) {
+				nextRec = nextRec->prev;
+			}
+			if (!nextRec) {
+				return false;
+			}
+			WiboWin64Context callerCtx;
+			guestCallContext(nextRec, &callerCtx);
+			wibo_contextToUnwind(&callerCtx, &frame);
+			nextRec = nextRec->prev;
+			isCaller = true;
+			continue;
 		}
 		uint64_t imageBase = 0;
 		WiboRuntimeFunction function;
@@ -424,7 +436,7 @@ static bool resumeRaisedException64(EXCEPTION_RECORD *record) {
 	WiboContext64 start;
 	wibo_contextToUnwind(&original, &start);
 	WiboWin64Context ctx = original;
-	if (!guestDispatchFrames(record, &ctx, &start, true)) {
+	if (!guestDispatchFrames(record, &ctx, &start, true, rec->prev)) {
 		return false;
 	}
 	return memcmp(&ctx, &original, sizeof(ctx)) == 0;
@@ -438,17 +450,19 @@ static bool dispatchHostFault(void *uctx, EXCEPTION_RECORD *record) {
 	contextFromUcontext(uc, &exCtx);
 	WiboContext64 start;
 	wibo_contextToUnwind(&exCtx, &start);
+	const GuestCallRecord *rec = currentThreadTeb->GuestCallFrame;
 	bool startIsCaller = false;
+	const GuestCallRecord *nextRec = rec;
 	if (!wibo_isRegisteredCode(start.rip)) {
-		const GuestCallRecord *rec = currentThreadTeb->GuestCallFrame;
 		if (!rec) {
 			return false;
 		}
 		guestCallContext(rec, &exCtx);
 		wibo_contextToUnwind(&exCtx, &start);
 		startIsCaller = true;
+		nextRec = rec->prev;
 	}
-	if (!guestDispatchFrames(record, &exCtx, &start, startIsCaller)) {
+	if (!guestDispatchFrames(record, &exCtx, &start, startIsCaller, nextRec)) {
 		return false;
 	}
 	contextToUcontext(&exCtx, uc);
