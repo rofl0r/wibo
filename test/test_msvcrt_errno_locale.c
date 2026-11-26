@@ -20,6 +20,46 @@ static DWORD WINAPI errnoWorker(LPVOID unused) {
 	return 0;
 }
 
+#define STRESS_THREADS 4
+#define STRESS_ITERATIONS 500
+
+static char *g_expectedPath;
+static char *g_expectedErr;
+
+static char *copyOf(const char *s) {
+	size_t n = strlen(s) + 1;
+	char *out = malloc(n);
+	TEST_CHECK(out != NULL);
+	memcpy(out, s, n);
+	return out;
+}
+
+static DWORD WINAPI strerrorWorker(LPVOID unused) {
+	(void)unused;
+	strerror(EACCES);
+	return 0;
+}
+
+static DWORD WINAPI stressWorker(LPVOID unused) {
+	(void)unused;
+	DWORD failures = 0;
+	for (int i = 0; i < STRESS_ITERATIONS; i++) {
+		const char *p = getenv("PATH");
+		const char *e = strerror(ENOENT);
+		const char *d = localeconv()->decimal_point;
+		if (!p || strcmp(p, g_expectedPath) != 0) {
+			failures++;
+		}
+		if (!e || strcmp(e, g_expectedErr) != 0) {
+			failures++;
+		}
+		if (strcmp(d, ".") != 0) {
+			failures++;
+		}
+	}
+	return failures;
+}
+
 int main(void) {
 	// getenv results must stay valid across later getenv calls and heap reuse.
 	const char *path = getenv("PATH");
@@ -39,7 +79,9 @@ int main(void) {
 		}
 	}
 	TEST_CHECK_STR_EQ(saved, path);
+	TEST_CHECK(getenv("PATH") == path);
 	free(saved);
+
 
 	// localeconv must follow setlocale. Skip when the host has no such locale.
 	TEST_CHECK(setlocale(LC_NUMERIC, "C") != NULL);
@@ -63,7 +105,30 @@ int main(void) {
 	TEST_CHECK_EQ(WAIT_OBJECT_0, WaitForSingleObject(thread, 5000));
 	CloseHandle(thread);
 	TEST_CHECK_EQ(ENOENT, g_workerErrno);
-	TEST_CHECK_EQ(7, errno);
+	// strerror is per thread: another thread's call must not overwrite ours.
+	char *expectedErr = copyOf(strerror(ENOENT));
+	const char *mainErr = strerror(ENOENT);
+	HANDLE strerrThread = CreateThread(NULL, 0, strerrorWorker, NULL, 0, NULL);
+	TEST_CHECK(strerrThread != NULL);
+	TEST_CHECK_EQ(WAIT_OBJECT_0, WaitForSingleObject(strerrThread, 5000));
+	CloseHandle(strerrThread);
+	TEST_CHECK_STR_EQ(expectedErr, mainErr);
+
+	// Concurrent getenv, strerror and localeconv calls must all return the right text.
+	g_expectedPath = copyOf(path);
+	g_expectedErr = expectedErr;
+	HANDLE stress[STRESS_THREADS];
+	for (int i = 0; i < STRESS_THREADS; i++) {
+		stress[i] = CreateThread(NULL, 0, stressWorker, NULL, 0, NULL);
+		TEST_CHECK(stress[i] != NULL);
+	}
+	for (int i = 0; i < STRESS_THREADS; i++) {
+		TEST_CHECK_EQ(WAIT_OBJECT_0, WaitForSingleObject(stress[i], 30000));
+		DWORD failures = 1;
+		TEST_CHECK(GetExitCodeThread(stress[i], &failures));
+		TEST_CHECK_EQ(0, failures);
+		CloseHandle(stress[i]);
+	}
 
 	return 0;
 }

@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <locale.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -125,37 +126,24 @@ static char *guestStringCopy(const char *s) {
 	return copy;
 }
 
-// Copies that outlive the call are kept for the life of the process, so guests
-// may keep the pointers. Deduplicated by content, so repeated calls with the
-// same value do not grow the list.
-typedef struct GuestStringNode {
-	struct GuestStringNode *next;
-	char *text;
-} GuestStringNode;
+// Guards the shared string slots below. Per-thread slots need no lock.
+static pthread_mutex_t g_guestStringMutex = PTHREAD_MUTEX_INITIALIZER;
 
-static GuestStringNode *g_internedStrings;
-
-static char *internGuestString(const char *s) {
+// A slot owns at most one guest copy. Refilling it frees the previous copy, so
+// the pointer stays valid until the same slot is refilled. A NULL source leaves
+// the slot untouched.
+static void refillGuestSlot(char **slot, const char *s) {
 	if (!s) {
-		return NULL;
+		return;
 	}
-	for (GuestStringNode *n = g_internedStrings; n; n = n->next) {
-		if (strcmp(n->text, s) == 0) {
-			return n->text;
-		}
+	char *copy = guestStringCopy(s);
+	if (!copy) {
+		return;
 	}
-	GuestStringNode *node = malloc(sizeof *node);
-	if (!node) {
-		return NULL;
+	if (*slot) {
+		guestFree(*slot);
 	}
-	node->text = guestStringCopy(s);
-	if (!node->text) {
-		free(node);
-		return NULL;
-	}
-	node->next = g_internedStrings;
-	g_internedStrings = node;
-	return node->text;
+	*slot = copy;
 }
 
 // MS struct lconv: ten string pointers followed by eight chars, with pointers
@@ -566,17 +554,6 @@ static void runOnexitTable(void) {
 	fflush(NULL);
 }
 
-// getenv, strerror and setlocale return host-owned storage that may be reused
-// or freed by later host calls. On wibo32 the result is interned into guest
-// memory that is never freed.
-static LPSTR guestResult(const char *s) {
-#ifdef WIBO_GUEST64
-	return (LPSTR)s;
-#else
-	return internGuestString(s);
-#endif
-}
-
 void *CDECL msvcrt_malloc(SIZE_T size) {
 	HOST_CONTEXT_GUARD();
 	return guestAlloc(size + 4);
@@ -661,7 +638,13 @@ LPSTR CDECL msvcrt_strrchr(LPCSTR str, int ch) {
 
 LPSTR CDECL msvcrt_strerror(int errnum) {
 	HOST_CONTEXT_GUARD();
-	return guestResult(strerror(errnum));
+#ifdef WIBO_GUEST64
+	return strerror(errnum);
+#else
+	static __thread char *t_text;
+	refillGuestSlot(&t_text, strerror(errnum));
+	return t_text;
+#endif
 }
 
 int CDECL msvcrt_tolower(int ch) {
@@ -1039,9 +1022,63 @@ int CDECL msvcrt_atexit(MSVCRT_PVFV fn) {
 	return 0;
 }
 
+#ifndef WIBO_GUEST64
+// One node per variable name seen by getenv. The value copy is replaced only
+// when the host value changes, so an unchanged variable keeps its pointer.
+typedef struct GuestEnvNode {
+	struct GuestEnvNode *next;
+	char *name;
+	char *value;
+} GuestEnvNode;
+
+static GuestEnvNode *g_guestEnv;
+
+// Caller holds g_guestStringMutex.
+static char *guestEnvValue(const char *name) {
+	const char *host = getenv(name);
+	if (!host) {
+		return NULL;
+	}
+	for (GuestEnvNode *n = g_guestEnv; n; n = n->next) {
+		if (strcmp(n->name, name) == 0) {
+			if (strcmp(n->value, host) != 0) {
+				refillGuestSlot(&n->value, host);
+			}
+			return n->value;
+		}
+	}
+	GuestEnvNode *node = calloc(1, sizeof *node);
+	if (!node) {
+		return NULL;
+	}
+	size_t nameLen = strlen(name) + 1;
+	node->name = malloc(nameLen);
+	node->value = guestStringCopy(host);
+	if (!node->name || !node->value) {
+		free(node->name);
+		if (node->value) {
+			guestFree(node->value);
+		}
+		free(node);
+		return NULL;
+	}
+	memcpy(node->name, name, nameLen);
+	node->next = g_guestEnv;
+	g_guestEnv = node;
+	return node->value;
+}
+#endif
+
 LPSTR CDECL msvcrt_getenv(LPCSTR name) {
 	HOST_CONTEXT_GUARD();
-	return guestResult(getenv(name));
+#ifdef WIBO_GUEST64
+	return getenv(name);
+#else
+	pthread_mutex_lock(&g_guestStringMutex);
+	char *value = guestEnvValue(name);
+	pthread_mutex_unlock(&g_guestStringMutex);
+	return value;
+#endif
 }
 
 int CDECL msvcrt_setvbuf(void *stream, LPSTR buf, int mode, SIZE_T size) {
@@ -1164,22 +1201,34 @@ void *CDECL msvcrt_localeconv(void) {
 #ifdef WIBO_GUEST64
 	return localeconv();
 #else
-	// Refreshed on every call so that a later setlocale() is reflected.
-	static MsLconv guestLconv;
+	// Per-thread, and refreshed on every call so that a later setlocale() is
+	// reflected. The struct lives in guest memory because the guest reads it
+	// through the returned pointer.
+	static __thread MsLconv *t_guestLconv;
+	static __thread char *t_strings[10];
+	if (!t_guestLconv) {
+		t_guestLconv = guestAlloc(sizeof *t_guestLconv);
+		if (!t_guestLconv) {
+			return NULL;
+		}
+	}
 	const struct lconv *l = localeconv();
 	const char *strings[] = {
 		l->decimal_point,	  l->thousands_sep,		l->grouping,	 l->int_curr_symbol, l->currency_symbol,
 		l->mon_decimal_point, l->mon_thousands_sep, l->mon_grouping, l->positive_sign,	 l->negative_sign,
 	};
 	for (size_t i = 0; i < sizeof strings / sizeof strings[0]; i++) {
-		guestLconv.strings[i] = toGuestPtr(internGuestString(strings[i]));
+		if (strings[i]) {
+			refillGuestSlot(&t_strings[i], strings[i]);
+		}
+		t_guestLconv->strings[i] = strings[i] ? toGuestPtr(t_strings[i]) : 0;
 	}
 	const char chars[] = {
 		l->int_frac_digits, l->frac_digits,	   l->p_cs_precedes, l->p_sep_by_space,
 		l->n_cs_precedes,	l->n_sep_by_space, l->p_sign_posn,	 l->n_sign_posn,
 	};
-	memcpy(guestLconv.chars, chars, sizeof chars);
-	return &guestLconv;
+	memcpy(t_guestLconv->chars, chars, sizeof chars);
+	return t_guestLconv;
 #endif
 }
 
@@ -1210,7 +1259,20 @@ LPSTR CDECL msvcrt_setlocale(int category, LPCSTR locale) {
 		errno = EINVAL;
 		return NULL;
 	}
-	return guestResult(setlocale(hostCategory, locale));
+#ifdef WIBO_GUEST64
+	return setlocale(hostCategory, locale);
+#else
+	static char *s_text;
+	pthread_mutex_lock(&g_guestStringMutex);
+	const char *result = setlocale(hostCategory, locale);
+	LPSTR out = NULL;
+	if (result) {
+		refillGuestSlot(&s_text, result);
+		out = s_text;
+	}
+	pthread_mutex_unlock(&g_guestStringMutex);
+	return out;
+#endif
 }
 
 // Handlers run only from raise() and abort(); there is no asynchronous signal
