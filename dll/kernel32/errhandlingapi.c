@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "context.h"
+#include "context64.h"
 #include "errors.h"
 #include "internal.h"
 #include "kernel32.h"
@@ -288,6 +289,174 @@ __attribute__((no_stack_protector)) static bool resumeGuestFault(TEB *teb, const
 }
 #endif
 
+#if defined(WIBO_GUEST64)
+// One record per host-to-guest call, pushed by emitThunkWin64 (tools/gentramp.c). Records form a chain through
+// TEB.GuestCallFrame, innermost first, and live on the native stack. The layout must match the thunk's pushes.
+typedef struct GuestCallRecord {
+	struct GuestCallRecord *prev;
+	uint64_t r15, r14, r13, r12, rbx, rsi, rdi, rbp;
+	uint64_t returnAddress;
+	uint64_t guestRsp;
+} GuestCallRecord;
+
+_Static_assert(sizeof(GuestCallRecord) == 88, "GuestCallRecord must match the emitThunkWin64 frame layout");
+
+typedef WiboExceptionDisposition(__attribute__((ms_abi)) * WiboLanguageHandler)(EXCEPTION_RECORD *, uint64_t,
+																		  WiboWin64Context *,
+																		  WiboDispatcherContext *);
+
+static const int kMaxGuestFrames = 4096;
+static const int kGuestGprRegs[16] = {REG_RAX, REG_RCX, REG_RDX, REG_RBX, REG_RSP, REG_RBP, REG_RSI, REG_RDI,
+									  REG_R8,  REG_R9,  REG_R10, REG_R11, REG_R12, REG_R13, REG_R14, REG_R15};
+
+// The context of the guest function that called the innermost thunk, as seen from its return address.
+static void guestCallContext(const GuestCallRecord *rec, WiboWin64Context *ctx) {
+	memset(ctx, 0, sizeof(*ctx));
+	ctx->ContextFlags = CONTEXT_AMD64_CONTROL | CONTEXT_AMD64_INTEGER;
+	ctx->Rip = rec->returnAddress;
+	ctx->Rsp = rec->guestRsp;
+	ctx->Rbp = rec->rbp;
+	ctx->Rbx = rec->rbx;
+	ctx->Rsi = rec->rsi;
+	ctx->Rdi = rec->rdi;
+	ctx->R12 = rec->r12;
+	ctx->R13 = rec->r13;
+	ctx->R14 = rec->r14;
+	ctx->R15 = rec->r15;
+}
+
+static void contextFromUcontext(const ucontext_t *uc, WiboWin64Context *ctx) {
+	const greg_t *g = uc->uc_mcontext.gregs;
+	WiboContext64 regs;
+	memset(&regs, 0, sizeof(regs));
+	for (int i = 0; i < 16; i++) {
+		regs.gpr[i] = (uint64_t)g[kGuestGprRegs[i]];
+	}
+	regs.rip = (uint64_t)g[REG_RIP];
+	memset(ctx, 0, sizeof(*ctx));
+	ctx->ContextFlags = CONTEXT_AMD64_CONTROL | CONTEXT_AMD64_INTEGER;
+	wibo_contextFromUnwind(&regs, ctx);
+	ctx->EFlags = (uint32_t)g[REG_EFL];
+}
+
+static void contextToUcontext(const WiboWin64Context *ctx, ucontext_t *uc) {
+	greg_t *g = uc->uc_mcontext.gregs;
+	WiboContext64 regs;
+	wibo_contextToUnwind(ctx, &regs);
+	for (int i = 0; i < 16; i++) {
+		g[kGuestGprRegs[i]] = (greg_t)regs.gpr[i];
+	}
+	g[REG_RIP] = (greg_t)regs.rip;
+	g[REG_EFL] = (greg_t)ctx->EFlags;
+}
+
+// Records of frames that the resumed code has abandoned lie below its stack pointer.
+static void dropAbandonedGuestCallRecords(uint64_t rsp) {
+	GuestCallRecord *rec = currentThreadTeb->GuestCallFrame;
+	while (rec && (uint64_t)(uintptr_t)rec < rsp) {
+		rec = rec->prev;
+	}
+	currentThreadTeb->GuestCallFrame = rec;
+}
+
+// Walks guest frames outward from start and runs the language handler of each frame that has one. The walk ends at
+// the first frame whose code lies outside every registered module, which is the host boundary. ContinueSearch moves
+// to the caller frame. Returns true if a handler returned ContinueExecution, leaving exCtx as the context to resume.
+// Handlers receive exCtx as their ContextRecord so they can change it.
+static bool guestDispatchFrames(EXCEPTION_RECORD *record, WiboWin64Context *exCtx, const WiboContext64 *start,
+								bool startIsCaller) {
+	WiboContext64 frame = *start;
+	bool isCaller = startIsCaller;
+	for (int depth = 0; depth < kMaxGuestFrames; depth++) {
+		uint64_t controlPc = isCaller ? frame.rip - 1 : frame.rip;
+		if (!wibo_isRegisteredCode(controlPc)) {
+			return false;
+		}
+		uint64_t imageBase = 0;
+		WiboRuntimeFunction function;
+		bool hasFunction = wibo_lookupRuntimeFunction(controlPc, &imageBase, &function);
+		WiboWin64Context frameContext;
+		memset(&frameContext, 0, sizeof(frameContext));
+		frameContext.ContextFlags = CONTEXT_AMD64_CONTROL | CONTEXT_AMD64_INTEGER;
+		wibo_contextFromUnwind(&frame, &frameContext);
+
+		WiboContext64 caller = frame;
+		WiboFrameInfo info;
+		if (!wibo_unwindWithFunction(&caller, controlPc, hasFunction ? imageBase : 0,
+									 hasFunction ? &function : NULL, &info)) {
+			return false;
+		}
+		if ((info.handlerFlags & UNW_FLAG_EHANDLER) && info.languageHandler) {
+			WiboDispatcherContext dispatch;
+			memset(&dispatch, 0, sizeof(dispatch));
+			dispatch.ControlPc = controlPc;
+			dispatch.ImageBase = imageBase;
+			dispatch.FunctionEntry = hasFunction ? &function : NULL;
+			dispatch.EstablisherFrame = info.establisherFrame;
+			dispatch.ContextRecord = &frameContext;
+			dispatch.LanguageHandler = info.languageHandler;
+			dispatch.HandlerData = (void *)(uintptr_t)info.handlerData;
+			WiboLanguageHandler handler = (WiboLanguageHandler)(uintptr_t)info.languageHandler;
+			WiboExceptionDisposition disposition = handler(record, info.establisherFrame, exCtx, &dispatch);
+			if (disposition == WiboExceptionContinueExecution) {
+				return true;
+			}
+			if (disposition != WiboExceptionContinueSearch) {
+				return false;
+			}
+		}
+		frame = caller;
+		isCaller = true;
+	}
+	return false;
+}
+
+// A continuable RaiseException from guest code returns normally when a handler continues without changing the
+// context. Changing it would need the RaiseException host frame discarded, so such a handler reports the exception
+// as unhandled, as the i386 path does.
+static bool resumeRaisedException64(EXCEPTION_RECORD *record) {
+	const GuestCallRecord *rec = currentThreadTeb->GuestCallFrame;
+	if (!rec || (record->ExceptionFlags & EXCEPTION_NONCONTINUABLE)) {
+		return false;
+	}
+	WiboWin64Context original;
+	guestCallContext(rec, &original);
+	WiboContext64 start;
+	wibo_contextToUnwind(&original, &start);
+	WiboWin64Context ctx = original;
+	if (!guestDispatchFrames(record, &ctx, &start, true)) {
+		return false;
+	}
+	return memcmp(&ctx, &original, sizeof(ctx)) == 0;
+}
+
+// A fault in guest code dispatches from the faulting context. A fault inside host code (for example a host API given
+// a bad guest pointer) is attributed to the innermost guest call, and ContinueExecution resumes at that call's return.
+static bool dispatchHostFault(void *uctx, EXCEPTION_RECORD *record) {
+	ucontext_t *uc = uctx;
+	WiboWin64Context exCtx;
+	contextFromUcontext(uc, &exCtx);
+	WiboContext64 start;
+	wibo_contextToUnwind(&exCtx, &start);
+	bool startIsCaller = false;
+	if (!wibo_isRegisteredCode(start.rip)) {
+		const GuestCallRecord *rec = currentThreadTeb->GuestCallFrame;
+		if (!rec) {
+			return false;
+		}
+		guestCallContext(rec, &exCtx);
+		wibo_contextToUnwind(&exCtx, &start);
+		startIsCaller = true;
+	}
+	if (!guestDispatchFrames(record, &exCtx, &start, startIsCaller)) {
+		return false;
+	}
+	contextToUcontext(&exCtx, uc);
+	dropAbandonedGuestCallRecords(exCtx.Rsp);
+	return true;
+}
+#endif
+
 // The stack protector reads the canary through %gs on i386, which is not reliable in a signal frame.
 // SA_NODEFER is not set, so a fault while this handler runs is fatal (the kernel resets to SIG_DFL).
 // Returning from this function resumes the guest when a handler continued execution.
@@ -326,6 +495,11 @@ __attribute__((no_stack_protector)) static void reportHostFault(int sig, siginfo
 		return;
 	}
 #endif
+#if defined(WIBO_GUEST64)
+	if (dispatchHostFault(uctx, &record)) {
+		return;
+	}
+#endif
 	reportUnhandledException(&record);
 }
 
@@ -356,7 +530,13 @@ void WINAPI RaiseException(DWORD dwExceptionCode, DWORD dwExceptionFlags, DWORD 
 	memset(&record, 0, sizeof(record));
 	record.ExceptionCode = dwExceptionCode;
 	record.ExceptionFlags = dwExceptionFlags;
+#if defined(WIBO_GUEST64)
+	// The return address points into the thunk, so the raise site is the guest return address the thunk recorded.
+	const GuestCallRecord *callRecord = currentThreadTeb->GuestCallFrame;
+	record.ExceptionAddress = callRecord ? callRecord->returnAddress : (uint64_t)(uintptr_t)__builtin_return_address(0);
+#else
 	record.ExceptionAddress = toGuestPtr(__builtin_return_address(0));
+#endif
 	if (lpArguments) {
 		DWORD count = nNumberOfArguments < (DWORD)EXCEPTION_MAXIMUM_PARAMETERS ? nNumberOfArguments
 																			   : (DWORD)EXCEPTION_MAXIMUM_PARAMETERS;
@@ -365,6 +545,11 @@ void WINAPI RaiseException(DWORD dwExceptionCode, DWORD dwExceptionFlags, DWORD 
 	}
 #if defined(__i386__)
 	if (resumeRaisedException(&record)) {
+		return;
+	}
+#endif
+#if defined(WIBO_GUEST64)
+	if (resumeRaisedException64(&record)) {
 		return;
 	}
 #endif

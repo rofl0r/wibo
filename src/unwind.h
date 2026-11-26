@@ -22,6 +22,13 @@ void wibo_unregisterFunctionTable(WiboFunctionTable *table);
 // Finds the runtime function covering pc in any registered module.
 bool wibo_lookupRuntimeFunction(uint64_t pc, uint64_t *imageBase, WiboRuntimeFunction *out);
 
+// True when pc lies inside a module registered with a function table, including code with no unwind entry.
+bool wibo_isRegisteredCode(uint64_t pc);
+
+#define UNW_FLAG_EHANDLER 0x1
+#define UNW_FLAG_UHANDLER 0x2
+#define UNW_FLAG_CHAININFO 0x4
+
 // x64 register numbers follow the CONTEXT/ModRM order: rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8..r15.
 #define WIBO_REG_RSP 4
 #define WIBO_REG_RBP 5

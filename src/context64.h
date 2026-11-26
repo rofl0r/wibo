@@ -115,3 +115,30 @@ static inline void wibo_contextFromUnwind(const WiboContext64 *in, WiboWin64Cont
 	}
 	context->Rip = in->rip;
 }
+
+// Values returned by a language handler. They match the winnt.h EXCEPTION_DISPOSITION enumeration.
+typedef enum {
+	WiboExceptionContinueExecution = 0,
+	WiboExceptionContinueSearch = 1,
+	WiboExceptionNestedException = 2,
+	WiboExceptionCollidedUnwind = 3,
+} WiboExceptionDisposition;
+
+// DISPATCHER_CONTEXT (winnt.h, 0x50 bytes). Handlers receive a pointer to it as their fourth argument.
+typedef struct {
+	uint64_t ControlPc;
+	uint64_t ImageBase;
+	const WiboRuntimeFunction *FunctionEntry;
+	uint64_t EstablisherFrame;
+	uint64_t TargetIp;
+	WiboWin64Context *ContextRecord;
+	uint64_t LanguageHandler;
+	void *HandlerData;
+	void *HistoryTable;
+	uint32_t ScopeIndex;
+	uint32_t Fill0;
+} WiboDispatcherContext;
+
+_Static_assert(sizeof(WiboDispatcherContext) == 0x50, "DISPATCHER_CONTEXT size");
+_Static_assert(offsetof(WiboDispatcherContext, ContextRecord) == 0x28, "DISPATCHER_CONTEXT ContextRecord offset");
+_Static_assert(offsetof(WiboDispatcherContext, ScopeIndex) == 0x48, "DISPATCHER_CONTEXT ScopeIndex offset");

@@ -21,6 +21,7 @@
 #define TEB_HAS_FSGSBASE 0xfb8 // HasFsGsBase
 #define TEB_HOST_CS_SEL 0xfba  // HostCodeSelector
 #define TEB_BOUNDARY 0xfc0	   // GuestBoundary
+#define TEB_GUEST_FRAME 0xfc8  // GuestCallFrame
 
 #endif
 

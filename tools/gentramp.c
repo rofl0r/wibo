@@ -1755,10 +1755,20 @@ static void emitThunkWin64(Buf *o, const Sig *f) {
     long stackArgs = (tgt.stackSize + 15) & ~15L;
     long frame = stackArgs + kXmmSaved * 16;
 
+    /* The record below holds the guest's callee-saved state and return address, linked from TEB.GuestCallFrame so
+       SEH dispatch can unwind guest frames when the host code this thunk calls raises or faults. */
     bline(o, "\tpush rbp");
     bline(o, "\tmov rbp, rsp");
     bline(o, "\tpush rdi");
     bline(o, "\tpush rsi");
+    bline(o, "\tpush rbx");
+    bline(o, "\tpush r12");
+    bline(o, "\tpush r13");
+    bline(o, "\tpush r14");
+    bline(o, "\tpush r15");
+    bline(o, "\tGET_TEB_HOST r11");
+    bline(o, "\tpush qword ptr [r11+TEB_GUEST_FRAME]");
+    bline(o, "\tmov qword ptr [r11+TEB_GUEST_FRAME], rsp");
     bline(o, "\tsub rsp, %ld", frame);
     for (int k = 0; k < kXmmSaved; k++)
         bline(o, "\tmovups xmmword ptr [rsp+%ld], xmm%d", stackArgs + 16L * k, 6 + k);
@@ -1785,6 +1795,13 @@ static void emitThunkWin64(Buf *o, const Sig *f) {
     for (int k = 0; k < kXmmSaved; k++)
         bline(o, "\tmovups xmm%d, xmmword ptr [rsp+%ld]", 6 + k, stackArgs + 16L * k);
     bline(o, "\tadd rsp, %ld", frame);
+    bline(o, "\tGET_TEB_HOST r11");
+    bline(o, "\tpop qword ptr [r11+TEB_GUEST_FRAME]");
+    bline(o, "\tpop r15");
+    bline(o, "\tpop r14");
+    bline(o, "\tpop r13");
+    bline(o, "\tpop r12");
+    bline(o, "\tpop rbx");
     bline(o, "\tpop rsi");
     bline(o, "\tpop rdi");
     bline(o, "\tpop rbp");

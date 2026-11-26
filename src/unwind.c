@@ -103,9 +103,16 @@ bool wibo_lookupRuntimeFunction(uint64_t pc, uint64_t *imageBase, WiboRuntimeFun
 	return found;
 }
 
-#define UNW_FLAG_EHANDLER 0x1
-#define UNW_FLAG_UHANDLER 0x2
-#define UNW_FLAG_CHAININFO 0x4
+bool wibo_isRegisteredCode(uint64_t pc) {
+	bool found = false;
+	pthread_mutex_lock(&g_tablesMutex);
+	for (size_t i = 0; i < g_tables.len && !found; i++) {
+		const WiboFunctionTable *table = g_tables.data[i];
+		found = pc >= table->imageBase && pc - table->imageBase < table->imageSize;
+	}
+	pthread_mutex_unlock(&g_tablesMutex);
+	return found;
+}
 
 #define UWOP_PUSH_NONVOL 0
 #define UWOP_ALLOC_LARGE 1

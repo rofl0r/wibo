@@ -547,6 +547,10 @@ typedef struct _TEB {
 #endif
 	// Stack pointer of the innermost host-to-guest activation; SEH dispatch never resumes above it.
 	void *GuestBoundary;
+#ifdef __x86_64__
+	// Innermost Win64 thunk call record (see emitThunkWin64). Read by SEH dispatch to find guest frames.
+	void *GuestCallFrame;
+#endif
 } TEB;
 typedef GUEST_PTR PTEB;
 
@@ -576,6 +580,9 @@ _Static_assert(offsetof(TEB, DataSelector) == TEB_DS_SEL, "DS selector offset mi
 #endif
 _Static_assert(offsetof(TEB, CurrentStackPointer) == TEB_SP, "Stack pointer offset mismatch");
 _Static_assert(offsetof(TEB, GuestBoundary) == TEB_BOUNDARY, "GuestBoundary offset mismatch");
+#ifdef TEB_GUEST_FRAME
+_Static_assert(offsetof(TEB, GuestCallFrame) == TEB_GUEST_FRAME, "GuestCallFrame offset mismatch");
+#endif
 #ifdef TEB_FSBASE
 _Static_assert(offsetof(TEB, HostFsBase) == TEB_FSBASE, "HostFsBase offset mismatch");
 #endif
