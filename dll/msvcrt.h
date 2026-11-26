@@ -6,10 +6,11 @@
 typedef void(_CC_CDECL *MSVCRT_PVFV)(void);
 typedef int(_CC_CDECL *MSVCRT_ONEXIT_FN)(void);
 typedef int(_CC_CDECL *MSVCRT_COMPARE_FN)(const void *, const void *);
+typedef void(_CC_CDECL *MSVCRT_SIGHANDLER)(int);
 
 // Win64 msvcrt subset. Export names are these identifiers with the "msvcrt_" prefix stripped.
 // FILE* arguments are pointers into the MS-layout iob array returned by __iob_func.
-// Variadic arguments are forwarded in integer registers and stack slots only; floating-point varargs are not supported.
+// Variadic arguments are forwarded as raw 64-bit slots; floating-point values are read from them as raw bits.
 void *CDECL msvcrt_malloc(SIZE_T size);
 void *CDECL msvcrt_calloc(SIZE_T count, SIZE_T size);
 void CDECL msvcrt_free(void *ptr);
@@ -58,3 +59,19 @@ unsigned int CDECL msvcrt____lc_codepage_func(void);
 int *CDECL msvcrt__errno(void);
 void *CDECL msvcrt_localeconv(void);
 void *CDECL msvcrt_signal(int sig, void *handler);
+int CDECL msvcrt_raise(int sig);
+void *CDECL msvcrt_fopen(LPCSTR filename, LPCSTR mode);
+int CDECL msvcrt_fclose(void *stream);
+int CDECL msvcrt_fflush(void *stream);
+SIZE_T CDECL msvcrt_fread(void *buf, SIZE_T size, SIZE_T count, void *stream);
+LPSTR CDECL msvcrt_fgets(LPSTR buf, int n, void *stream);
+int CDECL msvcrt_fputs(LPCSTR str, void *stream);
+int CDECL msvcrt_fgetc(void *stream);
+int CDECL msvcrt_getc(void *stream);
+int CDECL msvcrt_ungetc(int ch, void *stream);
+int CDECL msvcrt_fseek(void *stream, LONG offset, int origin);
+LONG CDECL msvcrt_ftell(void *stream);
+void CDECL msvcrt_rewind(void *stream);
+int CDECL msvcrt_feof(void *stream);
+int CDECL msvcrt_ferror(void *stream);
+void CDECL msvcrt_clearerr(void *stream);
