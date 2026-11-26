@@ -3,6 +3,7 @@
 #   make                        build build/release/wibo
 #   make CONFIG=debug           build build/debug/wibo
 #   make ARCH=x86_64            64-bit build in build/release-x86_64/
+#   make WIN64=1                Win64 runtime (runs PE32+ programs) in build/release-win64/
 #   make test [TEST=name]       build the Win32 fixtures and run them under wibo
 #   make bundle WIBO_BUNDLE_FILES="app.exe lib.dll"
 #                               build build/release/wibo-bundled with the files linked in (Linux)
@@ -12,6 +13,8 @@
 # Variables (command line or environment):
 #   CONFIG                 debug | release (default release)
 #   ARCH                   i686 | x86_64 (default i686; WIBO_64=1 selects x86_64)
+#   WIN64                  1 builds the Win64 runtime (implies ARCH=x86_64): native 64-bit guest pointers,
+#                          no 32-bit trampolines or LDT setup (default 0)
 #   CC                     target C compiler (default gcc)
 #   LTO                    1 enables link-time optimization (default 0)
 #   WIBO_VERSION           version string (default: git describe, else "unknown")
@@ -42,6 +45,13 @@ ARCH ?= $(DEFAULT_ARCH)
 ifeq ($(WIBO_64),1)
 ARCH := x86_64
 endif
+WIN64 ?= 0
+ifneq ($(filter-out 0 1,$(WIN64)),)
+$(error WIN64 must be 0 or 1, got '$(WIN64)')
+endif
+ifeq ($(WIN64),1)
+ARCH := x86_64
+endif
 ifneq ($(filter-out i686 x86_64,$(ARCH)),)
 $(error ARCH must be i686 or x86_64, got '$(ARCH)')
 endif
@@ -56,7 +66,7 @@ MINGW_WINDRES ?= i686-w64-mingw32-windres
 CLANG_FORMAT ?= clang-format
 
 BUILD_ROOT := build
-BUILD_DIR := $(BUILD_ROOT)/$(CONFIG)$(if $(filter $(DEFAULT_ARCH),$(ARCH)),,-$(ARCH))
+BUILD_DIR := $(BUILD_ROOT)/$(CONFIG)$(if $(filter 1,$(WIN64)),-win64,$(if $(filter $(DEFAULT_ARCH),$(ARCH)),,-$(ARCH)))
 OBJ_DIR := $(BUILD_DIR)/obj
 GEN_DIR := $(BUILD_DIR)/generated
 TEST_BIN_DIR := $(BUILD_DIR)/test
@@ -95,7 +105,7 @@ PLATFORM_LDFLAGS := -Wl,-no_pie,-no_fixup_chains -Wl,-segalign,0x1000 -Wl,-pagez
 	-Wl,-image_base,0x7E001000 -Wl,-segaddr,RESV32,0x1000 -Wl,-segprot,RESV32,-,-
 PLATFORM_LIBS :=
 else ifeq ($(UNAME_S),Linux)
-PLATFORM_SRCS := src/async_io_epoll.c src/processes_linux.c src/setup_linux.c
+PLATFORM_SRCS := src/async_io_epoll.c src/processes_linux.c $(if $(filter 1,$(WIN64)),src/setup_linux64.c,src/setup_linux.c)
 # GNU ld on ELF rejects --image-base; -Ttext-segment places the image at the same address.
 PLATFORM_LDFLAGS := -no-pie -Wl,-Ttext-segment=0x70000000
 PLATFORM_LIBS := -latomic
@@ -198,8 +208,15 @@ WINE_DLL_FLAG_NAMES := crtdll:CRTDLL msvcrt:MSVCRT msvcirt:MSVCIRT msvcrt20:MSVC
 	ucrtbase:UCRTBASE
 WINE_DLL_DEFS := $(foreach p,$(WINE_DLL_FLAG_NAMES),-DWIBO_HAS_$(word 2,$(subst :, ,$(p)))=$(if $(filter $(word 1,$(subst :, ,$(p))),$(EMBEDDED_WINE_DLLS)),1,0))
 
-TRAMP_MODULES := advapi32 bcrypt entry mscoree version rpcrt4 shlwapi ws2 vcruntime lmgr \
+ALL_TRAMP_MODULES := advapi32 bcrypt entry mscoree version rpcrt4 shlwapi ws2 vcruntime lmgr \
 	ole32 oleaut32 user32 ntdll kernel32
+# One thunk set per build: the Win64 runtime generates Win64-ABI thunks, every other build generates the guest-ABI set.
+TRAMP_MODULES := $(ALL_TRAMP_MODULES)
+ifeq ($(WIN64),1)
+TRAMP_ARCH_ARGS := --arch x86_64 --guest-abi win64
+else
+TRAMP_ARCH_ARGS := --arch $(GENTRAMP_ARCH)
+endif
 TRAMP_HDRS_advapi32 := $(addprefix dll/advapi32/,$(addsuffix .h,$(ADVAPI32_NAMES)))
 TRAMP_HDRS_bcrypt := dll/bcrypt.h
 TRAMP_HDRS_entry := src/entry.h
@@ -220,37 +237,23 @@ TRAMP_STAMPS := $(foreach m,$(TRAMP_MODULES),$(GEN_DIR)/$(m)_trampolines.stamp)
 # gentramp writes the .S and .h pair; a stamp file records the run so parallel builds never invoke it twice.
 define TRAMPOLINE_RULE
 $$(GEN_DIR)/$(1)_trampolines.stamp: $$(GENTRAMP) $$(TRAMP_HDRS_$(1)) | $$(GEN_DIR)
-	$$(GENTRAMP) --dll $(1) --headers $$(TRAMP_HDRS_$(1)) --arch $$(GENTRAMP_ARCH) \
+	$$(GENTRAMP) --dll $(1) --headers $$(TRAMP_HDRS_$(1)) $$(TRAMP_ARCH_ARGS) \
 		--out-asm $$(GEN_DIR)/$(1)_trampolines.S --out-hdr $$(GEN_DIR)/$(1)_trampolines.h \
-		-I . -I dll -I src -D WIBO_CODEGEN=1 --cc "$$(CC_TARGET_CC)"
+		-I . -I dll -I src -D WIBO_CODEGEN=1 --cc "$$(CC_TARGET_CC) $$(WIN64_DEFS)"
 	@touch $$@
 endef
 $(foreach m,$(TRAMP_MODULES),$(eval $(call TRAMPOLINE_RULE,$(m))))
 
 TRAMP_OBJS := $(addprefix $(OBJ_DIR)/generated/,$(addsuffix _trampolines.S.o,$(TRAMP_MODULES)))
 
-# Win64 guests call the host with the Win64 ABI; thunks exist only for x86_64 hosts.
-ifeq ($(GENTRAMP_ARCH),x86_64)
-WIN64_TRAMP_MODULES := $(TRAMP_MODULES)
-endif
-define WIN64_TRAMPOLINE_RULE
-$$(GEN_DIR)/$(1)_win64_trampolines.stamp: $$(GENTRAMP) $$(TRAMP_HDRS_$(1)) | $$(GEN_DIR)
-	$$(GENTRAMP) --dll $(1) --headers $$(TRAMP_HDRS_$(1)) --arch x86_64 --guest-abi win64 \
-		--out-asm $$(GEN_DIR)/$(1)_win64_trampolines.S --out-hdr $$(GEN_DIR)/$(1)_win64_trampolines.h \
-		-I . -I dll -I src -D WIBO_CODEGEN=1 --cc "$$(CC_TARGET_CC)"
-	@touch $$@
-endef
-$(foreach m,$(WIN64_TRAMP_MODULES),$(eval $(call WIN64_TRAMPOLINE_RULE,$(m))))
-
-WIN64_TRAMP_OBJS := $(addprefix $(OBJ_DIR)/generated/,$(addsuffix _win64_trampolines.S.o,$(WIN64_TRAMP_MODULES)))
-
 WIBO_SRCS := $(CORE_SRCS) $(DLL_SRCS) $(EMBED_DLL_SRCS) $(PLATFORM_SRCS) $(URING_SRCS)
-WIBO_OBJS := $(addprefix $(OBJ_DIR)/,$(addsuffix .o,$(WIBO_SRCS))) $(TRAMP_OBJS) $(WIN64_TRAMP_OBJS)
+WIBO_OBJS := $(addprefix $(OBJ_DIR)/,$(addsuffix .o,$(WIBO_SRCS))) $(TRAMP_OBJS)
 WIBO_DEPS := $(WIBO_OBJS:.o=.d)
 
 # -std is C-only; the assembler sources reuse the same flags without it. LTO applies only to C compiles and links.
+WIN64_DEFS := $(if $(filter 1,$(WIN64)),-DWIBO_GUEST64=1)
 WIBO_COMMON_FLAGS := -Wall -Wextra $(OPT_FLAGS) $(TARGET_ARCH_FLAGS) \
-	$(GNU_ONLY_FLAGS) $(WINE_DLL_DEFS) $(GETTID_DEFS) -DWIBO_ENABLE_LIBURING=$(ENABLE_URING) \
+	$(GNU_ONLY_FLAGS) $(WINE_DLL_DEFS) $(GETTID_DEFS) $(WIN64_DEFS) -DWIBO_ENABLE_LIBURING=$(ENABLE_URING) \
 	-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_TIME_BITS=64 \
 	-I dll -I src -I $(GEN_DIR) -MMD -MP $(EXTRA_CFLAGS)
 WIBO_CFLAGS := $(WIBO_COMMON_FLAGS) $(LTO_FLAGS)
@@ -290,9 +293,6 @@ $(TRAMP_OBJS): $(OBJ_DIR)/generated/%_trampolines.S.o: $(GEN_DIR)/%_trampolines.
 	@mkdir -p $(@D)
 	$(CC) $(WIBO_COMMON_FLAGS) -c $(GEN_DIR)/$*_trampolines.S -o $@
 
-$(WIN64_TRAMP_OBJS): $(OBJ_DIR)/generated/%_win64_trampolines.S.o: $(GEN_DIR)/%_win64_trampolines.stamp
-	@mkdir -p $(@D)
-	$(CC) $(WIBO_COMMON_FLAGS) -c $(GEN_DIR)/$*_win64_trampolines.S -o $@
 
 $(GEN_DIR)/version_info.h: src/version_info.h.in FORCE | $(GEN_DIR)
 	sed -e 's|@WIBO_VERSION_STRING@|$(WIBO_VERSION)|' \

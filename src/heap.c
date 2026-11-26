@@ -32,7 +32,11 @@
 
 static const uintptr_t kLowMemoryStart = 0x00110000UL; // 1 MiB + 64 KiB
 static const uintptr_t kHeapMax = 0x70000000UL;
-#ifdef __APPLE__
+#if defined(WIBO_GUEST64)
+// Win64 guests use native 64-bit addresses. kTwoGB is the exclusive ceiling of the guest arena.
+static const uintptr_t kTopDownStart = 0x7E0000000000UL;
+static const uintptr_t kTwoGB = 0x7F0000000000UL;
+#elif defined(__APPLE__)
 // On macOS, our program is mapped at 0x7E001000
 static const uintptr_t kTopDownStart = 0x7D000000UL;
 static const uintptr_t kTwoGB = 0x7E000000UL;
@@ -1748,7 +1752,7 @@ __attribute__((used)) static void wibo_heap_constructor(void) {
 	for (size_t i = 0; i < g_numInitialMappings; ++i) {
 		const MEMORY_BASIC_INFORMATION *mapping = &g_initialMappings[i];
 		if (debug) {
-			fprintf(stderr, "Existing %zu: BaseAddress=%x, RegionSize=%u\n", i, mapping->BaseAddress,
+			fprintf(stderr, "Existing %zu: BaseAddress=%p, RegionSize=%u\n", i, (void *)(uintptr_t)mapping->BaseAddress,
 					(unsigned)mapping->RegionSize);
 		}
 		mappingPut((uintptr_t)fromGuestPtr(mapping->BaseAddress), mapping);

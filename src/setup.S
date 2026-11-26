@@ -19,7 +19,7 @@ ASM_GLOBAL(initFpState, @function)
 	ret
 ASM_END(initFpState)
 
-#if defined(__x86_64__) && defined(__linux__)
+#if defined(__x86_64__) && defined(__linux__) && !defined(WIBO_GUEST64)
 
 # void installSelectors(TEB *teb)
 # Installs ds/es selectors in 32-bit mode

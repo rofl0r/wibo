@@ -48,10 +48,15 @@
 // Used for host-to-guest calls
 #define GUEST_STDCALL __attribute__((stdcall))
 
+// The Win64 runtime (WIBO_GUEST64) uses native pointers, so guest and host addresses are identical.
+#ifdef WIBO_GUEST64
+typedef uint64_t GUEST_PTR;
+#else
 typedef unsigned int GUEST_PTR;
+#endif
 #define GUEST_NULL ((GUEST_PTR)0)
 
-#ifdef __x86_64__
+#if defined(__x86_64__) && !defined(WIBO_GUEST64)
 static inline GUEST_PTR toGuestPtr(const void *addr) {
 	uint64_t addr64 = (uint64_t)(uintptr_t)addr;
 	if (addr64 > 0xFFFFFFFF)
@@ -68,7 +73,11 @@ static inline void *fromGuestPtr(GUEST_PTR addr) {
 }
 
 typedef void VOID;
+#ifdef WIBO_GUEST64
+typedef intptr_t HANDLE;
+#else
 typedef int HANDLE;
+#endif
 typedef HANDLE HMODULE;
 typedef GUEST_PTR HGLOBAL;
 typedef GUEST_PTR HLOCAL;
@@ -94,9 +103,15 @@ typedef unsigned int ULONG;
 typedef ULONG *PULONG;
 typedef long long LONGLONG __attribute__((aligned(8)));
 typedef unsigned long long ULONGLONG __attribute__((aligned(8)));
+#ifdef WIBO_GUEST64
+typedef intptr_t LONG_PTR;
+typedef uintptr_t ULONG_PTR;
+typedef uintptr_t UINT_PTR;
+#else
 typedef int LONG_PTR;
 typedef unsigned int ULONG_PTR;
 typedef unsigned int UINT_PTR;
+#endif
 typedef ULONG_PTR DWORD_PTR;
 typedef DWORD_PTR *PDWORD_PTR;
 typedef short SHORT;
@@ -486,6 +501,9 @@ typedef struct _TEB {
 	ULONG LastStatusValue;
 	UNICODE_STRING StaticUnicodeString;
 	WCHAR StaticUnicodeBuffer[261];
+#ifdef WIBO_GUEST64
+	BYTE X64TebTailPadding[0x60]; // places DeallocationStack and TlsSlots at the native x64 offsets
+#endif
 	GUEST_PTR DeallocationStack;
 	GUEST_PTR TlsSlots[64];
 	LIST_ENTRY TlsLinks;
@@ -520,6 +538,15 @@ typedef struct _TEB {
 } TEB;
 typedef GUEST_PTR PTEB;
 
+#ifdef WIBO_GUEST64
+// Native x64 TEB offsets that Win64 code reads through gs:.
+_Static_assert(offsetof(NT_TIB, Self) == 0x30, "Self pointer offset mismatch");
+_Static_assert(offsetof(TEB, ThreadLocalStoragePointer) == 0x58, "TLS pointer offset mismatch");
+_Static_assert(offsetof(TEB, Peb) == 0x60, "PEB pointer offset mismatch");
+_Static_assert(offsetof(TEB, LastErrorValue) == 0x68, "LastErrorValue offset mismatch");
+_Static_assert(offsetof(TEB, DeallocationStack) == 0x1478, "DeallocationStack offset mismatch");
+_Static_assert(offsetof(TEB, TlsSlots) == 0x1480, "TLS slots offset mismatch");
+#else
 _Static_assert(offsetof(NT_TIB, Self) == TEB_SELF, "Self pointer offset mismatch");
 _Static_assert(offsetof(TEB, ThreadLocalStoragePointer) == 0x2C, "TLS pointer offset mismatch");
 _Static_assert(offsetof(TEB, Peb) == 0x30, "PEB pointer offset mismatch");
@@ -547,6 +574,7 @@ _Static_assert(offsetof(TEB, HasFsGsBase) == TEB_HAS_FSGSBASE, "HasFsGsBase offs
 #endif
 #ifdef TEB_HOST_CS_SEL
 _Static_assert(offsetof(TEB, HostCodeSelector) == TEB_HOST_CS_SEL, "HostCodeSelector offset mismatch");
+#endif
 #endif
 
 typedef struct _MEMORY_BASIC_INFORMATION {

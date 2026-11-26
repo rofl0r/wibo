@@ -503,11 +503,13 @@ int main(int argc, char **argv) {
 		Executable_free(executable);
 		return 1;
 	}
+#ifndef WIBO_GUEST64
 	if (executable->is64Bit) {
 		fprintf(stderr, "Executable %s is PE32+ (Win64); Win64 execution is not supported yet\n", resolvedGuestPath);
 		Executable_free(executable);
 		return 1;
 	}
+#endif
 
 	wibo_mainModule = wibo_registerProcessModule(executable, resolvedGuestPath, programName);
 	if (!wibo_mainModule || !wibo_mainModule->executable) {

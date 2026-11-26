@@ -45,7 +45,8 @@ typedef struct RTL_CRITICAL_SECTION {
 	ULONG_PTR SpinCount;
 } RTL_CRITICAL_SECTION, *PRTL_CRITICAL_SECTION, *LPCRITICAL_SECTION, *PCRITICAL_SECTION;
 
-_Static_assert(sizeof(RTL_CRITICAL_SECTION) == 24, "RTL_CRITICAL_SECTION must be 24 bytes");
+_Static_assert(sizeof(RTL_CRITICAL_SECTION) == (sizeof(GUEST_PTR) == 8 ? 40 : 24),
+			   "RTL_CRITICAL_SECTION size must match the guest pointer width");
 
 typedef union RTL_RUN_ONCE {
 	GUEST_PTR Ptr;

@@ -19,7 +19,7 @@
  * Identifiers without the prefix are exported unchanged. Typedef names are not remapped.
  *
  * --guest-abi win64 (x86_64 only) instead emits ms_abi guest -> SysV host thunks named
- * thunk_win64_<dll>_<export>, plus <dll>Win64ThunkByName. Win64 guests run native 64-bit code,
+ * thunk_<dll>_<export>, plus <dll>ThunkByName in the header. Win64 guests run native 64-bit code,
  * so no mode or segment switching is needed. Host-to-guest typedefs are not generated in this mode.
  */
 
@@ -1707,9 +1707,9 @@ static void emitAsm(Buf *o, const Sig *funcs, size_t nf, const Sig *tds, size_t 
             const Sig *f = &funcs[i];
             bline(o, "%s", "");
             bline(o, "# %s (win64 guest -> sysv host)", f->name);
-            bline(o, "ASM_GLOBAL(thunk_win64_%s_%s, @function)", g_dll, f->xname);
+            bline(o, "ASM_GLOBAL(thunk_%s_%s, @function)", g_dll, f->xname);
             emitThunkWin64(o, f);
-            bline(o, "ASM_END(thunk_win64_%s_%s)", g_dll, f->xname);
+            bline(o, "ASM_END(thunk_%s_%s)", g_dll, f->xname);
         }
         return;
     }
@@ -1741,7 +1741,8 @@ static void emitAsm(Buf *o, const Sig *funcs, size_t nf, const Sig *tds, size_t 
     }
 }
 
-static void emitHeaderWin64(Buf *o, const Sig *funcs, size_t nf, const Var *vars, size_t nv) {
+static void emitHeaderWin64(Buf *o, const Sig *funcs, size_t nf, const Sig *tds, size_t nt, const Var *vars,
+                            size_t nv) {
     char guard[128];
     size_t gi = 0;
     for (const char *p = g_dll; *p && gi + 1 < sizeof guard - 20; p++)
@@ -1759,14 +1760,48 @@ static void emitHeaderWin64(Buf *o, const Sig *funcs, size_t nf, const Var *vars
     bline(o, "extern \"C\" {");
     bline(o, "#endif");
     for (size_t i = 0; i < nf; i++)
-        bline(o, "extern void thunk_win64_%s_%s(void);", g_dll, funcs[i].xname);
+        bline(o, "extern void thunk_%s_%s(void);", g_dll, funcs[i].xname);
     bline(o, "#ifdef __cplusplus");
     bline(o, "}");
     bline(o, "#endif");
     bline(o, "%s", "");
-    bline(o, "static inline void *%sWin64ThunkByName(const char *name) {", g_dll);
+    // Host code calls guest function pointers directly; the ms_abi cast makes gcc emit the Win64 call sequence.
+    for (size_t i = 0; i < nt; i++) {
+        const Sig *td = &tds[i];
+        if (td->variadic)
+            continue;
+        bprintf(o, "static inline ");
+        writeTypeForHeader(o, td->ret, 0);
+        bprintf(o, " call_%s(%s fn", td->name, td->name);
+        for (int a = 0; a < td->nargs; a++) {
+            bprintf(o, ", ");
+            writeTypeForHeader(o, td->args[a], 0);
+            bprintf(o, " arg%d", a);
+        }
+        bline(o, ") {");
+        bprintf(o, "\t%s((", td->ret->kind == TY_VOID ? "" : "return ");
+        writeTypeForHeader(o, td->ret, 0);
+        bprintf(o, " (__attribute__((ms_abi)) *)(");
+        if (td->nargs == 0)
+            bprintf(o, "void");
+        for (int a = 0; a < td->nargs; a++) {
+            if (a)
+                bprintf(o, ", ");
+            writeTypeForHeader(o, td->args[a], 0);
+        }
+        bprintf(o, "))(void *)fn)(");
+        for (int a = 0; a < td->nargs; a++) {
+            if (a)
+                bprintf(o, ", ");
+            bprintf(o, "arg%d", a);
+        }
+        bline(o, ");");
+        bline(o, "}");
+    }
+    bline(o, "%s", "");
+    bline(o, "static inline void *%sThunkByName(const char *name) {", g_dll);
     for (size_t i = 0; i < nf; i++)
-        bline(o, "\tif (strcmp(name, \"%s\") == 0) return (void*)&thunk_win64_%s_%s;", funcs[i].xname, g_dll,
+        bline(o, "\tif (strcmp(name, \"%s\") == 0) return (void*)&thunk_%s_%s;", funcs[i].xname, g_dll,
               funcs[i].xname);
     for (size_t i = 0; i < nv; i++)
         bline(o, "\tif (strcmp(name, \"%s\") == 0) return (void*)&%s;", vars[i].xname, vars[i].name);
@@ -1777,7 +1812,7 @@ static void emitHeaderWin64(Buf *o, const Sig *funcs, size_t nf, const Var *vars
 
 static void emitHeader(Buf *o, const Sig *funcs, size_t nf, const Sig *tds, size_t nt, const Var *vars, size_t nv) {
     if (g_win64) {
-        emitHeaderWin64(o, funcs, nf, vars, nv);
+        emitHeaderWin64(o, funcs, nf, tds, nt, vars, nv);
         return;
     }
     char guard[128];
