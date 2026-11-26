@@ -284,7 +284,7 @@ ifeq ($(UNAME_S),Darwin)
 $(OBJ_DIR)/src/setup_darwin.c.o: OBJ_CFLAGS += -fms-extensions
 endif
 
-.PHONY: all clean distclean fixtures test check-mingw gentramp bundle-tool bundle format check-format list-tests print-wibo FORCE
+.PHONY: all clean distclean fixtures test test-bundle check-mingw gentramp bundle-tool bundle format check-format list-tests print-wibo FORCE
 
 all: $(WIBO) $(WIBO_BUNDLE_TOOL)
 
@@ -452,6 +452,10 @@ test: $(WIBO) $(TEST_OUTS)
 		fi; \
 	done; \
 	if [ $$fail -ne 0 ]; then echo "error: fixture test(s) failed" >&2; exit 1; fi
+
+# Bundle checks use the fixtures of this build. Set BUNDLE_RUNNER=qemu-i386 to run the 32-bit stub on a 64-bit host.
+test-bundle: $(WIBO) $(WIBO_BUNDLE_TOOL) $(FIXTURE_OUTS) $(FIXTURE_DLL_OUTS)
+	BUNDLE_RUNNER="$(BUNDLE_RUNNER)" sh test/bundle_test.sh $(abspath $(WIBO_BUNDLE_TOOL)) $(abspath $(WIBO)) $(abspath $(TEST_BIN_DIR))
 
 list-tests:
 	@for t in $(FIXTURE_NAMES); do echo wibo.$$t; done

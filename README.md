@@ -92,25 +92,31 @@ wibo -- test.exe a b c
 ### Bundling a program into one Linux executable (experimental)
 
 `wibo-bundle` packs a PE program and its DLLs into a single ELF. The bundle runs the program
-with wibo's loader and serves the bundled DLLs and spawned children from memory.
+with wibo's loader and serves the bundled DLLs and spawned children from memory. PE32 (32-bit)
+and PE32+ (64-bit) images are both supported; the image architecture selects the stub build.
 
 ```sh
-make                                  # builds build/tools/wibo-bundle
+make                                  # builds build/tools/wibo-bundle and build/release/wibo (PE32)
 build/tools/wibo-bundle -o app --stub build/release/wibo prog.exe lib.dll
 ./app arg1 arg2                       # arguments are passed literally
+
+make WIN64=1                          # builds build/release-win64/wibo64 (PE32+, no -m32 needed)
+build/tools/wibo-bundle -o app64 --stub build/release-win64/wibo64 prog64.exe lib64.dll
 ```
 
 Or embed the payload into a new wibo build (Linux only):
 
 ```sh
-make bundle WIBO_BUNDLE_FILES="prog.exe lib.dll"   # -> build/release/wibo-bundled
+make bundle WIBO_BUNDLE_FILES="prog.exe lib.dll"               # -> build/release/wibo-bundled
+make WIN64=1 bundle WIBO_BUNDLE_FILES="prog64.exe lib64.dll"   # -> build/release-win64/wibo-bundled
 ```
 
 Notes:
 - The first file is the program; the rest are DLLs. Names match case-insensitively. Use `--pak -o out.pak ...` to write only the payload.
+- All files in a bundle must share one architecture, and `--stub` must be the wibo build for it. The bundler rejects mismatches.
 - Bundled programs receive their arguments literally: wibo's own options (`-C`, `--cmdline`, `--`) do not apply. `WIBO_DEBUG` still works.
 - A first argument of exactly `--bundle-child` is consumed as an internal marker.
-- Only PE32 (32-bit) programs are supported. Win64 (PE32+) images are not yet loadable by wibo.
+- `make test-bundle` (or `make WIN64=1 test-bundle`) checks a bundle with a DLL, a bundle without DLLs, and the architecture check. To run the 32-bit build on a 64-bit host, set `BUNDLE_RUNNER=qemu-i386`.
 
 ## Tests
 

@@ -1,9 +1,11 @@
-// wibo-bundle: packs a Win64 executable and its DLLs into a single Linux executable or a pak file.
+// wibo-bundle: packs a PE32 or PE32+ executable and its DLLs into a single Linux executable or a pak file.
 //
 //   wibo-bundle -o OUT --stub build/release/wibo main.exe [dll...]   writes a self-contained executable
-//   wibo-bundle --pak -o OUT main.exe [dll...]                       writes only the pak (for make WIBO_BUNDLE_FILES=...)
+//   wibo-bundle --pak -o OUT main.exe [dll...]                       writes only the pak (for make
+//   WIBO_BUNDLE_FILES=...)
 //
-// The first input is the program that runs; the others are served to it as if they sat next to it.
+// The first input is the program that runs; the others are served to it as if they sat next to it. All inputs must
+// share one architecture, and a --stub must be the wibo build for it (wibo for PE32, wibo64 for PE32+).
 
 #include "bundle_format.h"
 
@@ -75,6 +77,66 @@ static const char *baseName(const char *path) {
 	return slash ? slash + 1 : path;
 }
 
+typedef enum {
+	ARCH_UNKNOWN,
+	ARCH_X86,
+	ARCH_X64,
+} Arch;
+
+static const char *archName(Arch arch) {
+	switch (arch) {
+	case ARCH_X86:
+		return "i386 (PE32)";
+	case ARCH_X64:
+		return "x86_64 (PE32+)";
+	default:
+		return "unknown";
+	}
+}
+
+// Reads the machine field of a PE image's COFF header. ARCH_UNKNOWN means the image is not PE32 or PE32+.
+static Arch peArch(const uint8_t *data, size_t size) {
+	const uint32_t kPeOffsetField = 0x3C;
+	if (size < kPeOffsetField + 4) {
+		return ARCH_UNKNOWN;
+	}
+	uint32_t peOff = wibo_pakGetU32(data + kPeOffsetField);
+	if (peOff > size || size - peOff < 6 || memcmp(data + peOff, "PE\0\0", 4) != 0) {
+		return ARCH_UNKNOWN;
+	}
+	uint16_t machine = (uint16_t)(data[peOff + 4] | (data[peOff + 5] << 8));
+	switch (machine) {
+	case 0x014C:
+		return ARCH_X86;
+	case 0x8664:
+		return ARCH_X64;
+	default:
+		return ARCH_UNKNOWN;
+	}
+}
+
+// Reads e_machine of a little-endian ELF executable. The stub must match the bundled programs' architecture.
+static Arch elfArch(const uint8_t *data, size_t size) {
+	const uint8_t kElfClass32 = 1, kElfClass64 = 2, kElfDataLsb = 1;
+	const uint16_t kEmI386 = 3, kEmX86_64 = 62;
+	if (size < 20 ||
+		memcmp(data,
+			   "\x7f"
+			   "ELF",
+			   4) != 0 ||
+		data[5] != kElfDataLsb) {
+		return ARCH_UNKNOWN;
+	}
+	uint16_t machine = (uint16_t)(data[18] | (data[19] << 8));
+	if (machine == kEmI386 && data[4] == kElfClass32) {
+		return ARCH_X86;
+	}
+	if (machine == kEmX86_64 && data[4] == kElfClass64) {
+		return ARCH_X64;
+	}
+	return ARCH_UNKNOWN;
+}
+
 static void validateInput(Input *in) {
 	in->name = baseName(in->path);
 	size_t nameLen = strlen(in->name);
@@ -85,14 +147,12 @@ static void validateInput(Input *in) {
 	if (in->size == 0) {
 		die("%s is empty", in->path);
 	}
-	if (in->size < 2 || in->data[0] != 'M' || in->data[1] != 'Z') {
-		die("%s is not a PE image (missing MZ header)", in->path);
+	if (peArch(in->data, in->size) == ARCH_UNKNOWN) {
+		die("%s is not a PE32 or PE32+ image", in->path);
 	}
 }
 
-static size_t alignUp(size_t v, size_t a) {
-	return (v + a - 1) & ~(a - 1);
-}
+static size_t alignUp(size_t v, size_t a) { return (v + a - 1) & ~(a - 1); }
 
 // Builds the pak in memory. Data blocks are 16-byte aligned so they are aligned when mapped.
 static uint8_t *buildPak(Input *inputs, size_t count, size_t *sizeOut) {
@@ -184,6 +244,15 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	Arch arch = peArch(inputs[0].data, inputs[0].size);
+	for (size_t k = 1; k < count; k++) {
+		Arch other = peArch(inputs[k].data, inputs[k].size);
+		if (other != arch) {
+			die("%s is %s but %s is %s; all files in a bundle must share one architecture", inputs[0].path,
+				archName(arch), inputs[k].path, archName(other));
+		}
+	}
+
 	size_t pakSize = 0;
 	uint8_t *pak = buildPak(inputs, count, &pakSize);
 
@@ -196,8 +265,12 @@ int main(int argc, char **argv) {
 
 	size_t stubSize = 0;
 	uint8_t *stub = readFile(stubPath, &stubSize);
-	if (stubSize >= WIBO_BUNDLE_TRAILER_SIZE &&
-		memcmp(stub + stubSize - 8, WIBO_BUNDLE_TRAILER_MAGIC, 8) == 0) {
+	Arch stubArch = elfArch(stub, stubSize);
+	if (stubArch != arch) {
+		die("stub %s is built for %s but the bundled programs are %s (use wibo for PE32 and wibo64 for PE32+)",
+			stubPath, archName(stubArch), archName(arch));
+	}
+	if (stubSize >= WIBO_BUNDLE_TRAILER_SIZE && memcmp(stub + stubSize - 8, WIBO_BUNDLE_TRAILER_MAGIC, 8) == 0) {
 		die("%s already carries a bundle; use a plain wibo as --stub", stubPath);
 	}
 	uint8_t trailer[WIBO_BUNDLE_TRAILER_SIZE];
