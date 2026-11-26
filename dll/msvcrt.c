@@ -48,12 +48,31 @@ static GUEST_PTR g_initenv;
 static MSVCRT_PVFV g_onexit[MSVCRT_ONEXIT_MAX];
 static size_t g_onexitCount;
 
-// Guests reach errno through _errno(). On wibo32 the host errno is thread-local
-// storage above 4 GB, so guests see a mirror cell that is synced with the host
-// errno on each _errno() call.
+// On wibo32 the host errno is thread-local storage above 4 GB, so guests see a
+// mirror cell instead. Every msvcrt entry point copies a guest write into the
+// host errno on entry, and copies the host errno back into the cell on exit.
+// Errno changes made by non-msvcrt shims only reach the guest after the next
+// msvcrt call.
 #ifndef WIBO_GUEST64
 static int g_errnoCell;
 static int g_errnoShadow;
+
+static int errnoSyncIn(void) {
+	if (g_errnoCell != g_errnoShadow) {
+		errno = g_errnoCell;
+	}
+	return 0;
+}
+
+static void errnoSyncOut(const int *unused) {
+	(void)unused;
+	g_errnoShadow = g_errnoCell = errno;
+}
+
+// Redefined for this file only so that every msvcrt entry point gets the sync.
+#undef HOST_CONTEXT_GUARD
+#define HOST_CONTEXT_GUARD() \
+	int errnoSync_ __attribute__((cleanup(errnoSyncOut))) = errnoSyncIn()
 #endif
 
 // Guest-visible allocations come from the guest heap on wibo32 so that their
@@ -86,6 +105,39 @@ static char *guestStringCopy(const char *s) {
 		memcpy(copy, s, n);
 	}
 	return copy;
+}
+
+// Copies that outlive the call are kept for the life of the process, so guests
+// may keep the pointers. Deduplicated by content, so repeated calls with the
+// same value do not grow the list.
+typedef struct GuestStringNode {
+	struct GuestStringNode *next;
+	char *text;
+} GuestStringNode;
+
+static GuestStringNode *g_internedStrings;
+
+static char *internGuestString(const char *s) {
+	if (!s) {
+		return NULL;
+	}
+	for (GuestStringNode *n = g_internedStrings; n; n = n->next) {
+		if (strcmp(n->text, s) == 0) {
+			return n->text;
+		}
+	}
+	GuestStringNode *node = malloc(sizeof *node);
+	if (!node) {
+		return NULL;
+	}
+	node->text = guestStringCopy(s);
+	if (!node->text) {
+		free(node);
+		return NULL;
+	}
+	node->next = g_internedStrings;
+	g_internedStrings = node;
+	return node->text;
 }
 
 // MS struct lconv: ten string pointers followed by eight chars, with pointers
@@ -496,29 +548,14 @@ static void runOnexitTable(void) {
 	fflush(NULL);
 }
 
-// getenv and strerror return host-owned storage. On wibo32 the result is copied
-// into a small ring of guest-heap buffers; like the MS CRT's static buffers, it
-// is only guaranteed valid until a few later calls.
+// getenv, strerror and setlocale return host-owned storage that may be reused
+// or freed by later host calls. On wibo32 the result is interned into guest
+// memory that is never freed.
 static LPSTR guestResult(const char *s) {
 #ifdef WIBO_GUEST64
 	return (LPSTR)s;
 #else
-	enum { kResultRing = 16 };
-	static char *ring[kResultRing];
-	static size_t next;
-	if (!s) {
-		return NULL;
-	}
-	char *copy = guestStringCopy(s);
-	if (!copy) {
-		return NULL;
-	}
-	char **slot = &ring[next++ % kResultRing];
-	if (*slot) {
-		wibo_heap_guestFree(*slot);
-	}
-	*slot = copy;
-	return copy;
+	return internGuestString(s);
 #endif
 }
 
@@ -1100,10 +1137,6 @@ int *CDECL msvcrt__errno(void) {
 #ifdef WIBO_GUEST64
 	return &errno;
 #else
-	if (g_errnoCell != g_errnoShadow) {
-		errno = g_errnoCell;
-	}
-	g_errnoShadow = g_errnoCell = errno;
 	return &g_errnoCell;
 #endif
 }
@@ -1113,24 +1146,21 @@ void *CDECL msvcrt_localeconv(void) {
 #ifdef WIBO_GUEST64
 	return localeconv();
 #else
+	// Refreshed on every call so that a later setlocale() is reflected.
 	static MsLconv guestLconv;
-	static bool initialized;
-	if (!initialized) {
-		const struct lconv *l = localeconv();
-		const char *strings[] = {
-			l->decimal_point,	  l->thousands_sep,		l->grouping,	 l->int_curr_symbol, l->currency_symbol,
-			l->mon_decimal_point, l->mon_thousands_sep, l->mon_grouping, l->positive_sign,	 l->negative_sign,
-		};
-		for (size_t i = 0; i < sizeof strings / sizeof strings[0]; i++) {
-			guestLconv.strings[i] = toGuestPtr(guestStringCopy(strings[i]));
-		}
-		const char chars[] = {
-			l->int_frac_digits, l->frac_digits,	   l->p_cs_precedes, l->p_sep_by_space,
-			l->n_cs_precedes,	l->n_sep_by_space, l->p_sign_posn,	 l->n_sign_posn,
-		};
-		memcpy(guestLconv.chars, chars, sizeof chars);
-		initialized = true;
+	const struct lconv *l = localeconv();
+	const char *strings[] = {
+		l->decimal_point,	  l->thousands_sep,		l->grouping,	 l->int_curr_symbol, l->currency_symbol,
+		l->mon_decimal_point, l->mon_thousands_sep, l->mon_grouping, l->positive_sign,	 l->negative_sign,
+	};
+	for (size_t i = 0; i < sizeof strings / sizeof strings[0]; i++) {
+		guestLconv.strings[i] = toGuestPtr(internGuestString(strings[i]));
 	}
+	const char chars[] = {
+		l->int_frac_digits, l->frac_digits,	   l->p_cs_precedes, l->p_sep_by_space,
+		l->n_cs_precedes,	l->n_sep_by_space, l->p_sign_posn,	 l->n_sign_posn,
+	};
+	memcpy(guestLconv.chars, chars, sizeof chars);
 	return &guestLconv;
 #endif
 }
