@@ -27,8 +27,13 @@
 #endif
 
 // Pre-initialization logging macros
-#define LOG_OUT(msg) write(STDOUT_FILENO, msg, strlen(msg))
-#define LOG_ERR(msg) write(STDERR_FILENO, msg, strlen(msg))
+// Output is best-effort; a failed write is not actionable this early.
+static void preInitWrite(int fd, const void *buf, size_t len) {
+	ssize_t written = write(fd, buf, len);
+	(void)written;
+}
+#define LOG_OUT(msg) preInitWrite(STDOUT_FILENO, msg, strlen(msg))
+#define LOG_ERR(msg) preInitWrite(STDERR_FILENO, msg, strlen(msg))
 
 static const uintptr_t kLowMemoryStart = 0x00110000UL; // 1 MiB + 64 KiB
 static const uintptr_t kHeapMax = 0x70000000UL;
@@ -1553,7 +1558,7 @@ static void debugPrintMaps(void) {
 			close(fd);
 			return;
 		}
-		(void)write(STDERR_FILENO, buf, (size_t)r);
+		preInitWrite(STDERR_FILENO, buf, (size_t)r);
 	}
 	close(fd);
 }
