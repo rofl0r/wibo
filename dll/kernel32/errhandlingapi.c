@@ -645,7 +645,7 @@ __attribute__((no_stack_protector)) static void reportHostFault(int sig, siginfo
 			record.NumberParameters = 2;
 		// The x86 page-fault error code has bit 1 set for writes.
 		record.ExceptionInformation[0] = (err & 2) ? 1 : 0;
-		record.ExceptionInformation[1] = (ULONG_PTR)info->si_addr;
+		record.ExceptionInformation[1] = (ULONG_PTR)(uintptr_t)info->si_addr;
 	} else if (sig == SIGILL) {
 		record.ExceptionCode = STATUS_ILLEGAL_INSTRUCTION;
 	} else if (info->si_code == FPE_INTDIV) {
