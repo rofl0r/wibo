@@ -245,7 +245,7 @@ HGLOBAL WINAPI LoadResource(HMODULE hModule, HRSRC hResInfo) {
 		kernel32_setLastError(ERROR_RESOURCE_DATA_NOT_FOUND);
 		return GUEST_NULL;
 	}
-	const ImageResourceDataEntry *entry = (const ImageResourceDataEntry *)hResInfo;
+	const ImageResourceDataEntry *entry = fromGuestPtr(hResInfo);
 	if (!wibo_resourceEntryBelongsToExecutable(exe, entry)) {
 		kernel32_setLastError(ERROR_INVALID_PARAMETER);
 		return GUEST_NULL;
@@ -271,7 +271,7 @@ DWORD WINAPI SizeofResource(HMODULE hModule, HRSRC hResInfo) {
 		kernel32_setLastError(ERROR_RESOURCE_DATA_NOT_FOUND);
 		return 0;
 	}
-	const ImageResourceDataEntry *entry = (const ImageResourceDataEntry *)hResInfo;
+	const ImageResourceDataEntry *entry = fromGuestPtr(hResInfo);
 	if (!wibo_resourceEntryBelongsToExecutable(exe, entry)) {
 		kernel32_setLastError(ERROR_INVALID_PARAMETER);
 		return 0;
