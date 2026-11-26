@@ -7,6 +7,7 @@
 #ifdef __i386__
 
 #define TEB_SP 0xf9c // CurrentStackPointer
+#define TEB_BOUNDARY 0xfa0 // GuestBoundary
 
 #endif // __i386__
 
@@ -19,6 +20,7 @@
 #define TEB_GSBASE 0xfb0	   // HostGsBase
 #define TEB_HAS_FSGSBASE 0xfb8 // HasFsGsBase
 #define TEB_HOST_CS_SEL 0xfba  // HostCodeSelector
+#define TEB_BOUNDARY 0xfc0	   // GuestBoundary
 
 #endif
 

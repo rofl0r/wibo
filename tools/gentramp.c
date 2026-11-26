@@ -1403,6 +1403,11 @@ static void emitThunk32(Buf *o, const Sig *f, int h2g) {
 
     bline(o, "\tpush ebp");
     bline(o, "\tmov ebp, dword ptr [ecx+TEB_SP]");
+    if (h2g) {
+        /* Saves the enclosing activation's boundary on this stack so exit can restore it for nested calls. */
+        bline(o, "\tpush dword ptr [ecx+TEB_BOUNDARY]");
+        bline(o, "\tmov dword ptr [ecx+TEB_BOUNDARY], ebp");
+    }
     bline(o, "\tmov dword ptr [ecx+TEB_SP], esp");
     bline(o, "\tmov esp, ebp");
 
@@ -1492,7 +1497,13 @@ static void emitThunk32(Buf *o, const Sig *f, int h2g) {
     bline(o, "\tmov esp, ebp");
     bline(o, "\tmov ebp, dword ptr [ecx+TEB_SP]");
     bline(o, "\tmov dword ptr [ecx+TEB_SP], esp");
-    bline(o, "\tleave");
+    if (h2g) {
+        bline(o, "\tmov esp, ebp");
+        bline(o, "\tpop dword ptr [ecx+TEB_BOUNDARY]");
+        bline(o, "\tpop ebp");
+    } else {
+        bline(o, "\tleave");
+    }
 
     if (f->sourceCc == CC_STDCALL && src.stackSize > 0)
         bline(o, "\tret %ld", src.stackSize);

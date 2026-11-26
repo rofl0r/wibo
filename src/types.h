@@ -545,6 +545,8 @@ typedef struct _TEB {
 	bool HasFsGsBase;
 	WORD HostCodeSelector;
 #endif
+	// Stack pointer of the innermost host-to-guest activation; SEH dispatch never resumes above it.
+	void *GuestBoundary;
 } TEB;
 typedef GUEST_PTR PTEB;
 
@@ -573,6 +575,7 @@ _Static_assert(offsetof(TEB, CodeSelector) == TEB_CS_SEL, "CS selector offset mi
 _Static_assert(offsetof(TEB, DataSelector) == TEB_DS_SEL, "DS selector offset mismatch");
 #endif
 _Static_assert(offsetof(TEB, CurrentStackPointer) == TEB_SP, "Stack pointer offset mismatch");
+_Static_assert(offsetof(TEB, GuestBoundary) == TEB_BOUNDARY, "GuestBoundary offset mismatch");
 #ifdef TEB_FSBASE
 _Static_assert(offsetof(TEB, HostFsBase) == TEB_FSBASE, "HostFsBase offset mismatch");
 #endif
