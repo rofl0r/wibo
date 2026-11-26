@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "errhandlingapi.h"
 #include "errors.h"
 #include "handles.h"
 #include "types.h"
@@ -313,6 +314,8 @@ void kernel32_setLastError(DWORD error);
 void kernel32_setLastErrorFromErrno(void);
 // Turns host faults in guest code into unhandled Windows exceptions. Call once, on the main thread.
 void kernel32_installFaultHandlers(void);
+// Unwinds guest frames to targetFrame and resumes at targetIp with returnValue in rax. Used by RtlUnwindEx.
+void kernel32_unwindTo(uint64_t targetFrame, uint64_t targetIp, EXCEPTION_RECORD *record, uint64_t returnValue);
 
 _Noreturn static inline void kernel32_exitInternal(DWORD exitCode) {
 	DEBUG_LOG("exitInternal(%u)\n", exitCode);

@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/syscall.h>
 #include <ucontext.h>
@@ -509,13 +510,32 @@ static void dropAbandonedGuestCallRecords(uint64_t rsp) {
 	currentThreadTeb->GuestCallFrame = rec;
 }
 
+// State shared by the two passes over the guest frames. The search pass calls EHANDLERs and may end in
+// ContinueExecution (exCtx, which handlers may change) or in an unwind request. The unwind pass calls UHANDLERs
+// from the same origin, up to the frame whose establisher is targetFrame, and then produces the landing context.
+typedef struct {
+	EXCEPTION_RECORD *record;
+	WiboWin64Context *exCtx;
+	bool unwinding;
+	uint64_t targetFrame;
+	uint64_t targetIp;
+	uint64_t returnValue;
+	WiboWin64Context landing;
+} GuestWalk;
+
+typedef enum {
+	GuestWalkFailed,
+	GuestWalkContinueExecution,
+	GuestWalkUnwindRequested,
+	GuestWalkTargetReached,
+} GuestWalkResult;
+
 // Walks the stack outward from start and runs the language handler of each guest frame that has one. ContinueSearch
 // moves to the caller frame. When the caller is host code, the next guest frame is the one recorded by the nearest
 // outer guest call record whose return address is guest code, so host frames such as qsort are skipped. nextRec is
-// the first record not yet consumed. Returns true if a handler returned ContinueExecution, leaving exCtx as the
-// context to resume. Handlers receive exCtx as their ContextRecord so they can change it.
-static bool guestDispatchFrames(EXCEPTION_RECORD *record, WiboWin64Context *exCtx, const WiboContext64 *start,
-								bool startIsCaller, const GuestCallRecord *nextRec) {
+// the first record not yet consumed.
+static GuestWalkResult guestWalk(GuestWalk *w, const WiboContext64 *start, bool startIsCaller,
+								 const GuestCallRecord *nextRec) {
 	WiboContext64 frame = *start;
 	bool isCaller = startIsCaller;
 	for (int depth = 0; depth < kMaxGuestFrames; depth++) {
@@ -525,7 +545,7 @@ static bool guestDispatchFrames(EXCEPTION_RECORD *record, WiboWin64Context *exCt
 				nextRec = nextRec->prev;
 			}
 			if (!nextRec) {
-				return false;
+				return GuestWalkFailed;
 			}
 			WiboWin64Context callerCtx;
 			guestCallContext(nextRec, &callerCtx);
@@ -546,9 +566,14 @@ static bool guestDispatchFrames(EXCEPTION_RECORD *record, WiboWin64Context *exCt
 		WiboFrameInfo info;
 		if (!wibo_unwindWithFunction(&caller, controlPc, hasFunction ? imageBase : 0,
 									 hasFunction ? &function : NULL, &info)) {
-			return false;
+			return GuestWalkFailed;
 		}
-		if ((info.handlerFlags & UNW_FLAG_EHANDLER) && info.languageHandler) {
+		// Stacks grow down, so a frame above the target means the target was not on this walk.
+		if (w->unwinding && info.establisherFrame > w->targetFrame) {
+			return GuestWalkFailed;
+		}
+		uint32_t wanted = w->unwinding ? UNW_FLAG_UHANDLER : UNW_FLAG_EHANDLER;
+		if ((info.handlerFlags & wanted) && info.languageHandler) {
 			WiboDispatcherContext dispatch;
 			memset(&dispatch, 0, sizeof(dispatch));
 			dispatch.ControlPc = controlPc;
@@ -559,23 +584,99 @@ static bool guestDispatchFrames(EXCEPTION_RECORD *record, WiboWin64Context *exCt
 			dispatch.LanguageHandler = info.languageHandler;
 			dispatch.HandlerData = (void *)(uintptr_t)info.handlerData;
 			WiboLanguageHandler handler = (WiboLanguageHandler)(uintptr_t)info.languageHandler;
-			WiboExceptionDisposition disposition = handler(record, info.establisherFrame, exCtx, &dispatch);
-			if (disposition == WiboExceptionContinueExecution) {
-				return true;
+			WiboExceptionDisposition disposition;
+			if (w->unwinding) {
+				bool isTarget = info.establisherFrame == w->targetFrame;
+				w->record->ExceptionFlags = (w->record->ExceptionFlags & ~EXCEPTION_TARGET_UNWIND) |
+											(isTarget ? EXCEPTION_TARGET_UNWIND : 0);
+				dispatch.TargetIp = w->targetIp;
+				disposition = handler(w->record, info.establisherFrame, &frameContext, &dispatch);
+				if (disposition != WiboExceptionContinueSearch) {
+					return GuestWalkFailed;
+				}
+			} else {
+				disposition = handler(w->record, info.establisherFrame, w->exCtx, &dispatch);
+				if (disposition == WiboExceptionContinueExecution) {
+					return GuestWalkContinueExecution;
+				}
+				if (disposition == WiboExceptionUnwindTo) {
+					w->targetFrame = info.establisherFrame;
+					w->targetIp = dispatch.TargetIp;
+					return GuestWalkUnwindRequested;
+				}
+				if (disposition != WiboExceptionContinueSearch) {
+					return GuestWalkFailed;
+				}
 			}
-			if (disposition != WiboExceptionContinueSearch) {
-				return false;
-			}
+		}
+		if (w->unwinding && info.establisherFrame == w->targetFrame) {
+			w->landing = frameContext;
+			w->landing.Rip = w->targetIp;
+			w->landing.Rax = w->returnValue;
+			w->landing.EFlags = 0x202;
+			return GuestWalkTargetReached;
 		}
 		frame = caller;
 		isCaller = true;
 	}
-	return false;
+	return GuestWalkFailed;
+}
+
+// Runs the unwind pass from start to the target frame in w. Unwinding is not recoverable once begun, so a failure
+// here must be reported by the caller.
+static GuestWalkResult guestUnwindFrom(GuestWalk *w, const WiboContext64 *start, bool startIsCaller,
+									   const GuestCallRecord *nextRec) {
+	w->unwinding = true;
+	w->record->ExceptionFlags |= EXCEPTION_UNWINDING;
+	return guestWalk(w, start, startIsCaller, nextRec);
+}
+
+// Search pass, then the unwind pass if a handler asked for one.
+static GuestWalkResult guestDispatch(GuestWalk *w, const WiboContext64 *start, bool startIsCaller,
+									 const GuestCallRecord *nextRec) {
+	GuestWalkResult result = guestWalk(w, start, startIsCaller, nextRec);
+	if (result != GuestWalkUnwindRequested) {
+		return result;
+	}
+	w->returnValue = w->record->ExceptionCode;
+	return guestUnwindFrom(w, start, startIsCaller, nextRec);
+}
+
+// Resumes guest code at ctx and drops the host frames above ctx's stack pointer. Never returns.
+// The registers are read into the stub's argument array first, and the stub loads rsp last, since the array
+// lives in host frames that the switch abandons and a signal delivered after the switch could overwrite it.
+__asm__(".text\n"
+		".globl wiboResumeUnwind64\n"
+		".type wiboResumeUnwind64, @function\n"
+		"wiboResumeUnwind64:\n"
+		"\tmovq %rdi, %r10\n"
+		"\tmovq 80(%r10), %rax\n"
+		"\tmovq 16(%r10), %rbp\n"
+		"\tmovq 24(%r10), %rbx\n"
+		"\tmovq 32(%r10), %rsi\n"
+		"\tmovq 48(%r10), %r12\n"
+		"\tmovq 56(%r10), %r13\n"
+		"\tmovq 64(%r10), %r14\n"
+		"\tmovq 72(%r10), %r15\n"
+		"\tmovq 0(%r10), %r11\n"
+		"\tmovq 40(%r10), %rdi\n"
+		"\tmovq 8(%r10), %rsp\n"
+		"\tjmp *%r11\n"
+		".size wiboResumeUnwind64, .-wiboResumeUnwind64\n"
+		".previous\n");
+void wiboResumeUnwind64(const uint64_t regs[11]) __attribute__((noreturn));
+
+__attribute__((noreturn)) static void resumeAtContext64(const WiboWin64Context *ctx) {
+	dropAbandonedGuestCallRecords(ctx->Rsp);
+	uint64_t regs[11] = {ctx->Rip, ctx->Rsp, ctx->Rbp, ctx->Rbx, ctx->Rsi, ctx->Rdi,
+						 ctx->R12, ctx->R13, ctx->R14, ctx->R15, ctx->Rax};
+	wiboResumeUnwind64(regs);
 }
 
 // A continuable RaiseException from guest code returns normally when a handler continues without changing the
 // context. Changing it would need the RaiseException host frame discarded, so such a handler reports the exception
-// as unhandled, as the i386 path does.
+// as unhandled, as the i386 path does. An unwind to a __except scope is resumed directly, which discards the
+// RaiseException frame.
 static bool resumeRaisedException64(EXCEPTION_RECORD *record) {
 	const GuestCallRecord *rec = currentThreadTeb->GuestCallFrame;
 	if (!rec || (record->ExceptionFlags & EXCEPTION_NONCONTINUABLE)) {
@@ -586,14 +687,24 @@ static bool resumeRaisedException64(EXCEPTION_RECORD *record) {
 	WiboContext64 start;
 	wibo_contextToUnwind(&original, &start);
 	WiboWin64Context ctx = original;
-	if (!guestDispatchFrames(record, &ctx, &start, true, rec->prev)) {
+	GuestWalk walk;
+	memset(&walk, 0, sizeof(walk));
+	walk.record = record;
+	walk.exCtx = &ctx;
+	switch (guestDispatch(&walk, &start, true, rec->prev)) {
+	case GuestWalkTargetReached:
+		resumeAtContext64(&walk.landing);
+	case GuestWalkContinueExecution:
+		return memcmp(&ctx, &original, sizeof(ctx)) == 0;
+	default:
 		return false;
 	}
-	return memcmp(&ctx, &original, sizeof(ctx)) == 0;
 }
 
 // A fault in guest code dispatches from the faulting context. A fault inside host code (for example a host API given
 // a bad guest pointer) is attributed to the innermost guest call, and ContinueExecution resumes at that call's return.
+// An unwind landing is applied to the ucontext, so the kernel resumes there after the handler returns. The unwind
+// pass therefore runs on the fault's alternate signal stack, where guest __finally code runs as well.
 static bool dispatchHostFault(void *uctx, EXCEPTION_RECORD *record) {
 	ucontext_t *uc = uctx;
 	WiboWin64Context exCtx;
@@ -612,12 +723,67 @@ static bool dispatchHostFault(void *uctx, EXCEPTION_RECORD *record) {
 		startIsCaller = true;
 		nextRec = rec->prev;
 	}
-	if (!guestDispatchFrames(record, &exCtx, &start, startIsCaller, nextRec)) {
+	GuestWalk walk;
+	memset(&walk, 0, sizeof(walk));
+	walk.record = record;
+	walk.exCtx = &exCtx;
+	switch (guestDispatch(&walk, &start, startIsCaller, nextRec)) {
+	case GuestWalkContinueExecution:
+		contextToUcontext(&exCtx, uc);
+		dropAbandonedGuestCallRecords(exCtx.Rsp);
+		return true;
+	case GuestWalkTargetReached:
+		contextToUcontext(&walk.landing, uc);
+		dropAbandonedGuestCallRecords(walk.landing.Rsp);
+		return true;
+	default:
 		return false;
 	}
-	contextToUcontext(&exCtx, uc);
-	dropAbandonedGuestCallRecords(exCtx.Rsp);
-	return true;
+}
+
+// RtlUnwindEx's unwind starts at the guest frame that called it, and the target is a frame established below the
+// caller's frame. A NULL record is valid and unwinds with a synthesized STATUS_UNWIND record. Exit unwinds (NULL
+// target frame) are not supported, and the process stops if the target is not on the walk.
+void kernel32_unwindTo(uint64_t targetFrame, uint64_t targetIp, EXCEPTION_RECORD *record, uint64_t returnValue) {
+	if (!targetFrame) {
+		fprintf(stderr, "wibo: exit unwinds (RtlUnwindEx with a NULL target frame) are not supported\n");
+		_exit(1);
+	}
+	EXCEPTION_RECORD unwindRecord;
+	if (!record) {
+		memset(&unwindRecord, 0, sizeof(unwindRecord));
+		unwindRecord.ExceptionCode = STATUS_UNWIND;
+		record = &unwindRecord;
+	}
+	const GuestCallRecord *rec = currentThreadTeb->GuestCallFrame;
+	if (!rec) {
+		fprintf(stderr, "wibo: RtlUnwindEx called outside of a guest call\n");
+		_exit(1);
+	}
+	WiboWin64Context original;
+	guestCallContext(rec, &original);
+	WiboContext64 start;
+	wibo_contextToUnwind(&original, &start);
+	GuestWalk walk;
+	memset(&walk, 0, sizeof(walk));
+	walk.record = record;
+	walk.targetFrame = targetFrame;
+	walk.targetIp = targetIp;
+	walk.returnValue = returnValue;
+	if (guestUnwindFrom(&walk, &start, true, rec->prev) == GuestWalkTargetReached) {
+		resumeAtContext64(&walk.landing);
+	}
+	fprintf(stderr, "wibo: RtlUnwindEx could not unwind to frame 0x%llx\n", (unsigned long long)targetFrame);
+	_exit(1);
+}
+#else
+void kernel32_unwindTo(uint64_t targetFrame, uint64_t targetIp, EXCEPTION_RECORD *record, uint64_t returnValue) {
+	(void)targetIp;
+	(void)record;
+	(void)returnValue;
+	fprintf(stderr, "wibo: RtlUnwindEx is not supported on 32-bit guests; cannot unwind to 0x%llx\n",
+			(unsigned long long)targetFrame);
+	_exit(1);
 }
 #endif
 

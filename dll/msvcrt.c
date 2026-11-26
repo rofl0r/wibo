@@ -1685,16 +1685,35 @@ typedef struct {
 
 typedef int32_t(__attribute__((ms_abi)) * WiboExceptionFilter)(WiboExceptionPointers *, uint64_t);
 
-// Walks the C scope table for the first __except scope covering the faulting pc. Filters run in the first pass and
-// their results are honoured. __finally scopes run only while unwinding, which wibo does not perform.
+typedef void(__attribute__((ms_abi)) * WiboTerminationHandler)(uint8_t, uint64_t);
+
+// Search pass: the first __except scope covering pc decides. A filter's CONTINUE_EXECUTION resumes in place, and
+// EXECUTE_HANDLER asks the dispatcher to unwind to that scope's JumpTarget (recorded in dispatch->TargetIp).
+// Unwind pass: __finally scopes covering pc run innermost first. The __except scope the search pass chose ends the
+// walk on the target frame, where the dispatcher lands.
 static WiboExceptionDisposition cSpecificHandler(EXCEPTION_RECORD *record, uint64_t frame, WiboWin64Context *context,
 												 WiboDispatcherContext *dispatch) {
 	const WiboScopeTable *table = dispatch->HandlerData;
 	uint64_t base = dispatch->ImageBase;
 	uint64_t pc = dispatch->ControlPc;
+	bool unwinding = (record->ExceptionFlags & EXCEPTION_UNWINDING) != 0;
+	bool targetFrame = (record->ExceptionFlags & EXCEPTION_TARGET_UNWIND) != 0;
 	for (uint32_t i = 0; i < table->Count; i++) {
 		const WiboScopeRecord *scope = &table->ScopeRecord[i];
-		if (pc < base + scope->BeginAddress || pc >= base + scope->EndAddress || !scope->JumpTarget) {
+		if (pc < base + scope->BeginAddress || pc >= base + scope->EndAddress) {
+			continue;
+		}
+		if (unwinding) {
+			if (!scope->JumpTarget) {
+				WiboTerminationHandler finallyBlock = (WiboTerminationHandler)(uintptr_t)(base + scope->HandlerAddress);
+				// Normal exits run the finally inline, so every call made by the unwinder is abnormal.
+				finallyBlock(1, frame);
+			} else if (targetFrame && base + scope->JumpTarget == dispatch->TargetIp) {
+				return WiboExceptionContinueSearch;
+			}
+			continue;
+		}
+		if (!scope->JumpTarget) {
 			continue;
 		}
 		if (scope->HandlerAddress != EXCEPTION_EXECUTE_HANDLER) {
@@ -1708,8 +1727,8 @@ static WiboExceptionDisposition cSpecificHandler(EXCEPTION_RECORD *record, uint6
 				return WiboExceptionContinueExecution;
 			}
 		}
-		// EXECUTE_HANDLER needs the unwind to JumpTarget, which is not implemented.
-		return WiboExceptionUnsupportedUnwind;
+		dispatch->TargetIp = base + scope->JumpTarget;
+		return WiboExceptionUnwindTo;
 	}
 	return WiboExceptionContinueSearch;
 }

@@ -59,6 +59,10 @@ typedef struct {
 } EXCEPTION_REGISTRATION;
 
 #define EXCEPTION_NONCONTINUABLE 0x1
+#define EXCEPTION_UNWINDING 0x2
+#define EXCEPTION_EXIT_UNWIND 0x4
+#define EXCEPTION_TARGET_UNWIND 0x20
+#define EXCEPTION_COLLIDED_UNWIND 0x40
 #define ExceptionContinueExecution 0
 #define ExceptionContinueSearch 1
 #define ExceptionNestedException 2
