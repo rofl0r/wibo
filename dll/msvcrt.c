@@ -1106,6 +1106,24 @@ int CDECL msvcrt__putenv(LPCSTR envstring) {
 	return rc == 0 ? 0 : -1;
 }
 
+// Unlike _putenv, the name and value are separate arguments, so an empty value
+// deletes the variable instead of being parsed out of "NAME=".
+int CDECL msvcrt__putenv_s(LPCSTR name, LPCSTR value) {
+	HOST_CONTEXT_GUARD();
+	if (!name || !value || name[0] == '\0' || strchr(name, '=')) {
+		errno = EINVAL;
+		return EINVAL;
+	}
+	pthread_mutex_lock(&g_guestStringMutex);
+	int rc = value[0] ? setenv(name, value, 1) : unsetenv(name);
+	int err = rc == 0 ? 0 : errno;
+	pthread_mutex_unlock(&g_guestStringMutex);
+	if (err != 0) {
+		errno = err;
+	}
+	return err;
+}
+
 // Returns the required size through retLen even when the buffer is too small,
 // so callers can query first with a NULL buffer and len 0.
 int CDECL msvcrt_getenv_s(SIZE_T *retLen, LPSTR buffer, SIZE_T len, LPCSTR name) {

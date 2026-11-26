@@ -68,6 +68,7 @@ void *CDECL msvcrt_signal(int sig, void *handler);
 int CDECL msvcrt_raise(int sig);
 LPSTR CDECL msvcrt_getenv(LPCSTR name);
 int CDECL msvcrt__putenv(LPCSTR envstring);
+int CDECL msvcrt__putenv_s(LPCSTR name, LPCSTR value);
 int CDECL msvcrt_getenv_s(SIZE_T *retLen, LPSTR buffer, SIZE_T len, LPCSTR name);
 void *CDECL msvcrt_fopen(LPCSTR filename, LPCSTR mode);
 int CDECL msvcrt_setvbuf(void *stream, LPSTR buf, int mode, SIZE_T size);
