@@ -182,11 +182,23 @@ It serves the bundled DLLs, and any children it spawns, from memory.
 
 ## Known limitations
 
-- Structured exception handling is not emulated. `__try`/`__except`
-  blocks in guest code are not honored, and Win64
-  `__C_specific_handler` does not run guest handlers. Win64 would
-  need `.pdata`/`.xdata` unwinding and scope tables. Win32 would need
-  the FS:[0] SEH chain.
+- Structured exception handling runs only in 32-bit guests on i686
+  host builds (`CC="gcc -m32"`). `RaiseException` and guest faults walk
+  the guest's FS:[0] chain. A handler that returns
+  `ExceptionContinueExecution` resumes the guest. `ExceptionContinueSearch`
+  moves to the next frame. Any other disposition, including
+  `NestedException` and `CollidedUnwind`, is treated as unhandled.
+  - Frames past the innermost host-to-guest boundary are not searched.
+    Windows would search them, so a handler in a guest caller of host
+    code is skipped.
+  - A `RaiseException` continued with a changed context is treated as
+    unhandled. Redirecting would discard the host frame of the call.
+  - `RtlUnwind` is not supported. It prints an error and exits with
+    status 1. Unwinding to a target frame or running `EXECUTE_HANDLER`
+    would need the TEB boundary state restored, which is not implemented.
+  - x86_64 host builds and Win64 guests do not dispatch SEH. Win64
+    `__C_specific_handler` does not run guest handlers. Win64 would
+    need `.pdata`/`.xdata` unwinding and scope tables.
 - An unhandled exception (a guest fault or `RaiseException`) calls the
   `SetUnhandledExceptionFilter` filter. It prints
   `wibo: unhandled exception <code> at <address>` to stderr and exits
