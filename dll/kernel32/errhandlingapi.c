@@ -17,6 +17,9 @@
 #if defined(__linux__) && defined(__x86_64__)
 #include <asm/prctl.h>
 #endif
+#if defined(__linux__) && defined(__i386__)
+#include <asm/ldt.h>
+#endif
 
 static LPTOP_LEVEL_EXCEPTION_FILTER g_topLevelExceptionFilter = NULL;
 static UINT g_processErrorMode = 0;
@@ -136,9 +139,55 @@ __attribute__((no_stack_protector)) static void restoreHostFsForGuestFault(void 
 }
 #endif
 
+#if defined(__linux__) && defined(__i386__)
+// glibc's syscall() reads TLS through %gs, which is 0 in the faulting guest context, so issue the syscall directly.
+// %ebx is reserved for PIC, so the first argument is passed in %esi and swapped into %ebx around the trap.
+__attribute__((no_stack_protector)) static long rawSyscall1(long nr, long a1) {
+	long ret;
+	__asm__ volatile("xchgl %%ebx, %%esi\n\tint $0x80\n\txchgl %%ebx, %%esi"
+	                 : "=a"(ret)
+	                 : "a"(nr), "S"(a1)
+	                 : "memory");
+	return ret;
+}
+
+// A 32-bit guest runs with the TEB in fs and gs = 0. The thunks swap fs and gs with TEB.CurrentFsSelector and
+// TEB.CurrentGsSelector on every transition, so those fields hold the host selectors while guest code runs.
+// Swap the host selectors back before any host code runs, and store the guest selectors so the filter can
+// call back into the guest.
+__attribute__((no_stack_protector)) static void restoreHostSegmentsForGuestFault(void *uctx) {
+	const ucontext_t *uc = uctx;
+	uint16_t guestFs = (uint16_t)uc->uc_mcontext.gregs[REG_FS];
+	uint16_t guestGs = (uint16_t)uc->uc_mcontext.gregs[REG_GS];
+	// Only GDT thread-area entries are handled. The LDT fallback is not.
+	if ((guestFs & 4) || guestFs < 8) {
+		return;
+	}
+	struct user_desc desc;
+	memset(&desc, 0, sizeof(desc));
+	desc.entry_number = guestFs >> 3;
+	if (rawSyscall1(SYS_get_thread_area, (long)(uintptr_t)&desc) != 0) {
+		return;
+	}
+	TEB *teb = (TEB *)(uintptr_t)desc.base_addr;
+	if (!teb || teb->Tib.Self != toGuestPtr(teb)) {
+		return;
+	}
+	uint16_t hostFs = teb->CurrentFsSelector;
+	uint16_t hostGs = teb->CurrentGsSelector;
+	teb->CurrentStackPointer = (void *)(uintptr_t)(uint32_t)uc->uc_mcontext.gregs[REG_ESP];
+	teb->CurrentFsSelector = guestFs;
+	teb->CurrentGsSelector = guestGs;
+	__asm__ volatile("mov %0, %%fs\n\tmov %1, %%gs" : : "r"(hostFs), "r"(hostGs));
+}
+#endif
+
 // The stack protector reads the canary through %gs on i386, which is not reliable in a signal frame.
 // SA_NODEFER is not set, so a fault while this handler runs is fatal (the kernel resets to SIG_DFL).
 __attribute__((no_stack_protector)) static _Noreturn void reportHostFault(int sig, siginfo_t *info, void *uctx) {
+#if defined(__linux__) && defined(__i386__)
+	restoreHostSegmentsForGuestFault(uctx);
+#endif
 	uintptr_t ip = 0;
 	uintptr_t err = 0;
 	faultRegisters(uctx, &ip, &err);

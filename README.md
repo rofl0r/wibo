@@ -200,9 +200,12 @@ It serves the bundled DLLs, and any children it spawns, from memory.
 - Process exit codes are 8 bits wide on Linux. `GetExitCodeProcess`
   returns the low byte, so a process that dies from an access
   violation reports 5. Windows and Wine report `0xC0000005`.
-- The 32-bit build's crash report has not been verified on native i386
-  hardware. Under `qemu-i386`, the handler faulted on a `%gs` TLS
-  read, so the report is not produced there.
+- On 32-bit guests, a host fault restores the host `fs`/`gs` selectors
+  from the TEB slots before the report is printed. Only GDT thread
+  areas are handled. If the guest TEB is in an LDT (used when
+  `set_thread_area` is unavailable), the handler still faults and the
+  process dies with SIGSEGV. The report is verified on a Linux 6.1
+  kernel. It is not checked under `qemu-i386`.
 - The 32-bit guest's `errno` lives in a per-thread cell. The cell is
   not freed when its thread exits.
 - Native i686 builds (`CC="gcc -m32"`) run under `qemu-i386` with
