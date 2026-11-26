@@ -311,15 +311,6 @@ static int NamedPipeInstance_takeCompanion(NamedPipeInstance *self) {
 	return fd;
 }
 
-static void NamedPipeInstance_restoreCompanion(NamedPipeInstance *self, int fd) {
-	pthread_mutex_lock(&self->connectMutex);
-	self->companionFd = fd;
-	if (fd >= 0) {
-		self->clientConnected = false;
-	}
-	pthread_mutex_unlock(&self->connectMutex);
-}
-
 // Returns a new reference to a connectable instance, or NULL with *error set.
 static NamedPipeInstance *acquireConnectableInstance(NamedPipeState *state, DWORD desiredAccess, DWORD *error) {
 	if (!state) {
@@ -344,8 +335,9 @@ static NamedPipeInstance *acquireConnectableInstance(NamedPipeState *state, DWOR
 }
 
 // Does not take ownership of state.
-static void openNamedPipeClient(NamedPipeState *state, DWORD dwDesiredAccess, LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-								DWORD dwFlagsAndAttributes, HANDLE *outHandle) {
+static void openNamedPipeClient(NamedPipeState *state, DWORD dwDesiredAccess,
+								LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwFlagsAndAttributes,
+								HANDLE *outHandle) {
 	DWORD acquireError = ERROR_SUCCESS;
 	NamedPipeInstance *instance = acquireConnectableInstance(state, dwDesiredAccess, &acquireError);
 	if (!instance) {
@@ -505,9 +497,9 @@ static HANDLE createNamedPipe(ParsedPipeName *parsed, DWORD dwOpenMode, DWORD dw
 	DWORD normalizedMaxInstances = normalizeMaxInstances(nMaxInstances);
 
 	bool isNewState = false;
-	NamedPipeState *state = (NamedPipeState *)Namespace_getOrCreate(&wibo_g_namespace, parsed->namespaceKey,
-																	parsed->namespaceKeyLen, NamedPipeState_makeForName,
-																	parsed, &isNewState);
+	NamedPipeState *state =
+		(NamedPipeState *)Namespace_getOrCreate(&wibo_g_namespace, parsed->namespaceKey, parsed->namespaceKeyLen,
+												NamedPipeState_makeForName, parsed, &isNewState);
 	if (!state) {
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);
 		return INVALID_HANDLE_VALUE;
