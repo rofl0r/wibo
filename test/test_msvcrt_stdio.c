@@ -1,5 +1,6 @@
 #include <windows.h>
 
+#include <locale.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +21,9 @@ static void onExit(void) {}
 int main(void) {
 	const char *path = "msvcrt_stdio_test.tmp";
 	char buf[64];
+
+	TEST_CHECK(setlocale(LC_ALL, NULL) != NULL);
+	TEST_CHECK_EQ(0, strcmp(setlocale(LC_NUMERIC, "C"), "C"));
 
 	FILE *f = fopen(path, "wb");
 	TEST_CHECK(f != NULL);

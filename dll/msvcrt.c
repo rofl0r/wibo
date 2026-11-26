@@ -1135,6 +1135,36 @@ void *CDECL msvcrt_localeconv(void) {
 #endif
 }
 
+// MSVC numbers its LC_* categories differently from glibc, so translate them.
+static int msvcrtLcCategory(int category) {
+	switch (category) {
+	case 0:
+		return LC_ALL;
+	case 1:
+		return LC_COLLATE;
+	case 2:
+		return LC_CTYPE;
+	case 3:
+		return LC_MONETARY;
+	case 4:
+		return LC_NUMERIC;
+	case 5:
+		return LC_TIME;
+	default:
+		return -1;
+	}
+}
+
+LPSTR CDECL msvcrt_setlocale(int category, LPCSTR locale) {
+	HOST_CONTEXT_GUARD();
+	int hostCategory = msvcrtLcCategory(category);
+	if (hostCategory < 0) {
+		errno = EINVAL;
+		return NULL;
+	}
+	return guestResult(setlocale(hostCategory, locale));
+}
+
 // Handlers run only from raise() and abort(); there is no asynchronous signal
 // delivery.
 void *CDECL msvcrt_signal(int sig, void *handler) {

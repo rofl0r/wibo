@@ -63,6 +63,7 @@ int CDECL msvcrt____mb_cur_max_func(void);
 unsigned int CDECL msvcrt____lc_codepage_func(void);
 int *CDECL msvcrt__errno(void);
 void *CDECL msvcrt_localeconv(void);
+LPSTR CDECL msvcrt_setlocale(int category, LPCSTR locale);
 void *CDECL msvcrt_signal(int sig, void *handler);
 int CDECL msvcrt_raise(int sig);
 LPSTR CDECL msvcrt_getenv(LPCSTR name);
