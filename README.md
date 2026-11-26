@@ -227,9 +227,10 @@ It serves the bundled DLLs, and any children it spawns, from memory.
 - The 32-bit guest's `errno` lives in a per-thread cell. The cell is
   not freed when its thread exits.
 - Native i686 builds (`CC="gcc -m32"`) run under `qemu-i386` with
-  `TEST_RUNNER=qemu-i386 make test`. Child processes are started by
-  `execve("/proc/self/exe")`, which under qemu-user fails with
-  `Exec format error` and exits 127. `test_processes` and
+  `TEST_RUNNER=qemu-i386 make test`, or directly when the kernel can
+  execute i386 ELFs. Child processes are started by
+  `execve("/proc/self/exe")`. Without a binfmt_misc entry for i386 this
+  fails with `Exec format error` and exits 127. `test_processes` and
   `test_unhandled_exception` fail there for that reason only.
 - Kernels before 5.2 have no `CLONE_PIDFD`. Children are then tracked
   by pid and polled with `waitid(WNOHANG)` every 20 ms. If another
