@@ -18,11 +18,11 @@ Requires GNU Make, GCC (or Clang) and, for 32-bit builds, multilib support.
 make
 ```
 
-This produces a release x86 (32-bit) Linux binary at `./wibo32`. Use `make DEBUG=1` for a debug build (`-O0 -g3`) in the same location.
+This produces a release Linux binary at `./wibo32`. On x86_64 hosts `wibo32` is a 64-bit executable that runs PE32 (i386) guests by switching between 32-bit and 64-bit mode, so it needs no multilib. Use `make DEBUG=1` for a debug build (`-O0 -g3`) in the same location.
 
 Top-level targets:
 
-- `make wibo32`: 32-bit loader (`./wibo32`), PE32 programs
+- `make wibo32`: loader for PE32 programs (`./wibo32`; 64-bit host binary on x86_64)
 - `make wibo64`: 64-bit loader (`./wibo64`), PE32+ programs
 - `make wibo32 wibo64`: both
 - `make` builds `wibo32`, or `wibo64` when `WIN64=1` is set
@@ -35,8 +35,8 @@ Build variables (pass on the command line, e.g. `make DEBUG=1 wibo64`):
 | ------------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
 | `DEBUG`                   | `0`                    | `1` builds with `-O0 -g3`; `0` builds with `-O3 -DNDEBUG`                                    |
 | `WIN64`                   | `0`                    | `1` selects the 64-bit loader (`wibo64`), used by `make` and `make test`                     |
-| `ARCH`                    | `i686` (`x86_64` on macOS) | `i686` (32-bit, `-m32`) or `x86_64`. `WIBO_64=1` is shorthand for `ARCH=x86_64`             |
-| `CC`                      | `gcc` (`cc` on macOS)  | Target C compiler. For `wibo32` it must be a 32-bit cross compiler or a multilib gcc, e.g. `make CC="gcc -m32" wibo32` |
+| `ARCH`                    | `x86_64` on x86_64 hosts and macOS, else `i686` | `i686` (native 32-bit, `-m32`) or `x86_64` (64-bit host running PE32 guests via mode switching). `WIBO_64=1` is shorthand for `ARCH=x86_64` |
+| `CC`                      | `gcc` (`cc` on macOS)  | Target C compiler. Only needed for `ARCH=i686`, which requires a 32-bit compiler or multilib gcc, e.g. `make ARCH=i686 CC="gcc -m32" wibo32` |
 | `LTO`                     | `0`                    | Set to `1` to build with `-flto`                                                             |
 | `WIBO_ENABLE_LIBURING`    | `0`                    | Set to `1` to enable the io_uring backend (links system `liburing`)                          |
 | `WIBO_ENABLE_WINE_DLLS`   | `1`                    | Set to `0` to skip embedding the Wine CRT DLLs (see below)                                   |
@@ -47,8 +47,9 @@ Run `make print-wibo` to print the output path for the current configuration.
 
 Available configurations:
 
-- `make wibo32`: 32-bit Linux loader (release)
-- `make DEBUG=1 wibo32`: 32-bit Linux loader (debug)
+- `make wibo32`: PE32 loader (release; x86_64 host binary by default)
+- `make DEBUG=1 wibo32`: PE32 loader (debug)
+- `make ARCH=i686 CC="gcc -m32" wibo32`: native 32-bit PE32 loader (needs a 32-bit host)
 - `make wibo64`: 64-bit Linux loader for PE32+ programs (release)
 - `make DEBUG=1 wibo64`: 64-bit Linux loader for PE32+ programs (debug)
 - macOS: `make` and `make DEBUG=1` build an x86_64 binary (`./wibo32`)

@@ -14,11 +14,12 @@
 #
 # Variables (command line or environment):
 #   DEBUG                  1 builds with -O0 -g3; 0 builds with -O3 -DNDEBUG (default 0)
-#   ARCH                   i686 | x86_64 (default i686; WIBO_64=1 selects x86_64)
+#   ARCH                   i686 | x86_64 (default x86_64 on x86_64 hosts, else i686; WIBO_64=1 selects x86_64).
+#                          x86_64 wibo32 is a 64-bit binary that runs PE32 guests in-process.
 #   WIN64                  1 builds the Win64 runtime (implies ARCH=x86_64): native 64-bit guest pointers,
 #                          no 32-bit trampolines or LDT setup (default 0)
-#   CC                     target C compiler (default gcc). wibo32 needs a 32-bit compiler: a 32-bit cross
-#                          compiler or a multilib gcc, e.g. make CC="gcc -m32" wibo32
+#   CC                     target C compiler (default gcc). ARCH=i686 needs a 32-bit compiler: a 32-bit cross
+#                          compiler or a multilib gcc, e.g. make ARCH=i686 CC="gcc -m32" wibo32
 #   LTO                    1 enables link-time optimization (default 0)
 #   WIBO_VERSION           version string (default: git describe, else "unknown")
 #   WIBO_ENABLE_LIBURING   1 enables the io_uring backend on Linux (default 0)
@@ -43,7 +44,10 @@ ifneq ($(filter-out 0 1,$(DEBUG)),)
 $(error DEBUG must be 0 or 1, got '$(DEBUG)')
 endif
 
-DEFAULT_ARCH := $(if $(filter Darwin,$(UNAME_S)),x86_64,i686)
+# wibo32 is a 64-bit host binary that runs PE32 guests (mode-switching into 32-bit code) on x86_64 hosts;
+# ARCH=i686 builds a native 32-bit host binary instead.
+UNAME_M := $(shell uname -m)
+DEFAULT_ARCH := $(if $(or $(filter Darwin,$(UNAME_S)),$(filter x86_64 amd64,$(UNAME_M))),x86_64,i686)
 ARCH ?= $(DEFAULT_ARCH)
 ifeq ($(WIBO_64),1)
 ARCH := x86_64

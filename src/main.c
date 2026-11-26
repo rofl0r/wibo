@@ -504,8 +504,9 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	if (executable->is64Bit != GUEST_IS_64BIT) {
-		fprintf(stderr, "Executable %s is %s; this wibo runtime only runs %s images\n", resolvedGuestPath,
-		        executable->is64Bit ? "PE32+ (Win64)" : "PE32", GUEST_IS_64BIT ? "PE32+ (Win64)" : "PE32");
+		fprintf(stderr, "Executable %s is %s; this wibo runtime only runs %s images (use %s)\n", resolvedGuestPath,
+		        executable->is64Bit ? "PE32+ (Win64)" : "PE32", GUEST_IS_64BIT ? "PE32+ (Win64)" : "PE32",
+		        GUEST_IS_64BIT ? "wibo32" : "wibo64");
 		Executable_free(executable);
 		return 1;
 	}
