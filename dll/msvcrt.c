@@ -738,6 +738,52 @@ LPSTR CDECL msvcrt__strupr(LPSTR str) {
 	return str;
 }
 
+// The MS CRT long is 32 bits on both guest widths, so the host's 64-bit result is clamped to that range.
+static LONG strtolClamped(const char *str, char **end, int base, bool *overflow) {
+	long long value = strtoll(str, end, base);
+	*overflow = value > INT32_MAX || value < INT32_MIN;
+	if (value > INT32_MAX) {
+		return INT32_MAX;
+	}
+	if (value < INT32_MIN) {
+		return INT32_MIN;
+	}
+	return (LONG)value;
+}
+
+// atoi and atol do not set errno, so the host's ERANGE from strtoll is discarded here.
+int CDECL msvcrt_atoi(LPCSTR str) {
+	HOST_CONTEXT_GUARD();
+	int savedErrno = errno;
+	bool overflow;
+	LONG value = strtolClamped(str, NULL, 10, &overflow);
+	errno = savedErrno;
+	return value;
+}
+
+LONG CDECL msvcrt_atol(LPCSTR str) {
+	HOST_CONTEXT_GUARD();
+	int savedErrno = errno;
+	bool overflow;
+	LONG value = strtolClamped(str, NULL, 10, &overflow);
+	errno = savedErrno;
+	return value;
+}
+
+LONG CDECL msvcrt_strtol(LPCSTR str, GUEST_PTR *end, int base) {
+	HOST_CONTEXT_GUARD();
+	char *localEnd = NULL;
+	bool overflow;
+	LONG value = strtolClamped(str, &localEnd, base, &overflow);
+	if (overflow) {
+		errno = ERANGE;
+	}
+	if (end) {
+		*end = toGuestPtr(localEnd);
+	}
+	return value;
+}
+
 LPSTR CDECL msvcrt_strerror(int errnum) {
 	HOST_CONTEXT_GUARD();
 #ifdef WIBO_GUEST64
