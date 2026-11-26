@@ -209,10 +209,16 @@ It serves the bundled DLLs, and any children it spawns, from memory.
 - The 32-bit guest's `errno` lives in a per-thread cell. The cell is
   not freed when its thread exits.
 - Native i686 builds (`CC="gcc -m32"`) run under `qemu-i386` with
-  `TEST_RUNNER=qemu-i386 make test`. Under qemu-user,
-  `clone(CLONE_PIDFD)` with no exit signal returns `EINVAL`, though
-  the x86_64 kernel accepts it. `test_processes` and
+  `TEST_RUNNER=qemu-i386 make test`. Child processes are started by
+  `execve("/proc/self/exe")`, which under qemu-user fails with
+  `Exec format error` and exits 127. `test_processes` and
   `test_unhandled_exception` fail there for that reason only.
+- Kernels before 5.2 have no `CLONE_PIDFD`. Children are then tracked
+  by pid and polled with `waitid(WNOHANG)` every 20 ms. If another
+  part of the process reaps the child first, its exit code is
+  reported as 0. `test_bcrypt` can hang on such kernels until the
+  entropy pool is seeded. The 4.14 test run used
+  `-device virtio-rng-pci`.
 - The `setlocale` result for 32-bit guests comes from one shared slot.
   A call from another thread can replace it, so an older pointer may
   dangle.

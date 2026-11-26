@@ -20,6 +20,13 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+// Children spawned on kernels without CLONE_PIDFD (before 5.2) have no pidfd to epoll on,
+// so they are tracked by pid and polled with waitid(WNOHANG).
+typedef struct {
+	pid_t pid;
+	ProcessObject *po;
+} PidWatch;
+
 typedef struct {
 	ProcessManagerImpl base;
 	pthread_rwlock_t m;
@@ -28,7 +35,12 @@ typedef struct {
 	int mEpollFd;
 	int mWakeFd;
 	hashmap *mReg;
+	PidWatch *mPidWatches;
+	size_t mPidWatchCount;
+	size_t mPidWatchCap;
 } LinuxProcessManager;
+
+enum { kPidPollMs = 20 };
 
 static DWORD decodeExitCode(const siginfo_t *si) {
 	switch (si->si_code) {
@@ -69,6 +81,66 @@ static void unrefRegistered(const void *key, size_t keylen, void *value, void *c
 	ObjectBase_unref(&((ProcessObject *)value)->base.base);
 }
 
+static void finishProcess(ProcessObject *po, const siginfo_t *si) {
+	pthread_mutex_lock(&po->base.m);
+	po->base.signaled = true;
+	po->pidfd = -1;
+	if (!po->forcedExitCode) {
+		po->exitCode = decodeExitCode(si);
+	}
+	pthread_mutex_unlock(&po->base.m);
+	pthread_cond_broadcast(&po->base.cv);
+	WaitableObject_notifyWaiters(&po->base, false);
+	ObjectBase_unref(&po->base.base);
+}
+
+// Caller holds the write lock.
+static void addPidWatch(LinuxProcessManager *self, pid_t pid, ProcessObject *po) {
+	if (self->mPidWatchCount == self->mPidWatchCap) {
+		self->mPidWatchCap = self->mPidWatchCap ? self->mPidWatchCap * 2 : 8;
+		self->mPidWatches = xrealloc(self->mPidWatches, self->mPidWatchCap * sizeof(*self->mPidWatches));
+	}
+	self->mPidWatches[self->mPidWatchCount++] = (PidWatch){.pid = pid, .po = po};
+}
+
+static bool reapPidWatch(const PidWatch *w, siginfo_t *si) {
+	for (;;) {
+		memset(si, 0, sizeof(*si));
+		if (waitid(P_PID, w->pid, si, WEXITED | WNOHANG) == 0) {
+			return si->si_pid != 0;
+		}
+		if (errno == EINTR) {
+			continue;
+		}
+		// ECHILD: someone else reaped the child, so its real status is unavailable.
+		DEBUG_LOG("ProcessManager: waitid(%d) failed: %s\n", (int)w->pid, strerror(errno));
+		si->si_code = CLD_EXITED;
+		si->si_status = 0;
+		return true;
+	}
+}
+
+static void pollPidWatches(LinuxProcessManager *self) {
+	for (;;) {
+		ProcessObject *po = NULL;
+		siginfo_t si = {0};
+		pthread_rwlock_wrlock(&self->m);
+		for (size_t i = 0; i < self->mPidWatchCount; ++i) {
+			if (reapPidWatch(&self->mPidWatches[i], &si)) {
+				po = self->mPidWatches[i].po;
+				self->mPidWatches[i] = self->mPidWatches[--self->mPidWatchCount];
+				break;
+			}
+		}
+		pthread_rwlock_unlock(&self->m);
+		if (!po) {
+			return;
+		}
+		DEBUG_LOG("ProcessManager: pid-only process exited: code=%d status=%d\n", si.si_code, si.si_status);
+		finishProcess(po, &si);
+	}
+}
+
 static void checkPidfd(LinuxProcessManager *self, int pidfd) {
 	DEBUG_LOG("ProcessManager: checking pidfd %d\n", pidfd);
 
@@ -98,23 +170,20 @@ static void checkPidfd(LinuxProcessManager *self, int pidfd) {
 	if (!po) {
 		return;
 	}
-	pthread_mutex_lock(&po->base.m);
-	po->base.signaled = true;
-	po->pidfd = -1;
-	if (!po->forcedExitCode) {
-		po->exitCode = decodeExitCode(&si);
-	}
-	pthread_mutex_unlock(&po->base.m);
-	pthread_cond_broadcast(&po->base.cv);
-	WaitableObject_notifyWaiters(&po->base, false);
-	ObjectBase_unref(&po->base.base);
+	finishProcess(po, &si);
 }
 
 static void runLoop(LinuxProcessManager *self) {
 	enum { kMaxEvents = 64 };
 	struct epoll_event events[kMaxEvents] = {0};
 	while (atomic_load_explicit(&self->mRunning, memory_order_acquire)) {
-		int n = epoll_wait(self->mEpollFd, events, kMaxEvents, -1);
+		int timeoutMs = -1;
+		pthread_rwlock_rdlock(&self->m);
+		if (self->mPidWatchCount) {
+			timeoutMs = kPidPollMs;
+		}
+		pthread_rwlock_unlock(&self->m);
+		int n = epoll_wait(self->mEpollFd, events, kMaxEvents, timeoutMs);
 		if (n < 0) {
 			if (errno == EINTR) {
 				continue;
@@ -132,6 +201,7 @@ static void runLoop(LinuxProcessManager *self) {
 			}
 			checkPidfd(self, ev->data.fd);
 		}
+		pollPidWatches(self);
 	}
 }
 
@@ -190,6 +260,13 @@ static void linuxShutdown(ProcessManagerImpl *base) {
 	hashmap_foreach(self->mReg, unrefRegistered, NULL);
 	hashmap_free(self->mReg);
 	self->mReg = hashmap_create();
+	for (size_t i = 0; i < self->mPidWatchCount; ++i) {
+		ObjectBase_unref(&self->mPidWatches[i].po->base.base);
+	}
+	free(self->mPidWatches);
+	self->mPidWatches = NULL;
+	self->mPidWatchCount = 0;
+	self->mPidWatchCap = 0;
 	pthread_rwlock_unlock(&self->m);
 
 	if (self->mWakeFd >= 0) {
@@ -214,8 +291,16 @@ static bool linuxAddProcess(ProcessManagerImpl *base, ProcessObject *po) {
 	pidfd = po->pidfd;
 	if (pidfd < 0) {
 		pthread_mutex_unlock(&po->base.m);
-		ObjectBase_unref(&po->base.base);
-		return false;
+		if (pid <= 0) {
+			ObjectBase_unref(&po->base.base);
+			return false;
+		}
+		pthread_rwlock_wrlock(&self->m);
+		addPidWatch(self, pid, po);
+		pthread_rwlock_unlock(&self->m);
+		DEBUG_LOG("ProcessManager: registered pid %d without pidfd\n", pid);
+		linuxWake(self);
+		return true;
 	}
 	if (!epollAdd(self->mEpollFd, pidfd)) {
 		close(pidfd);
@@ -262,7 +347,9 @@ ProcessManagerImpl *wibo_detail_createProcessManagerImpl(void) {
 }
 
 int wibo_detail_spawnProcess(char *const argv[], char *const envp[], SpawnProcessInfo *info) {
-	pid_t pid = (pid_t)syscall(SYS_clone, CLONE_PIDFD, NULL, &info->pidfd);
+	// SIGCHLD as the exit signal makes the child an ordinary child like fork() produces. Without it,
+	// waitid(P_PID) returned ECHILD for the child on the 4.14 kernel (no pidfd), losing its exit status.
+	pid_t pid = (pid_t)syscall(SYS_clone, CLONE_PIDFD | SIGCHLD, NULL, &info->pidfd);
 	if (pid < 0) {
 		info->pidfd = -1;
 		int err = errno;
