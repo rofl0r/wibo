@@ -196,14 +196,31 @@ It serves the bundled DLLs, and any children it spawns, from memory.
     at load time. The walk stops at the first frame outside the guest
     modules, so host frames end the search. `__C_specific_handler`
     runs scope tables. Filter results are honoured. A scope that
-    returns `EXCEPTION_EXECUTE_HANDLER` is reported as unhandled.
+    returns `EXCEPTION_EXECUTE_HANDLER` unwinds to its `__except`
+    block (see below).
   - Win64 resume restores the integer and control registers from the
     handler's `CONTEXT`. XMM and MXCSR state is not restored.
   - A `RaiseException` continued with a changed context is treated as
     unhandled. Redirecting would discard the host frame of the call.
-  - `RtlUnwind` is not supported. It prints an error and exits with
-    status 1. Unwinding to a target frame or running `EXECUTE_HANDLER`
-    needs the unwinder to land in a frame, which is not implemented.
+  - Win64 `RtlUnwind` and `RtlUnwindEx` unwind to a target frame.
+    `__C_specific_handler` runs `__finally` funclets innermost first
+    with `AbnormalTermination` set, then the target `__except` scope
+    resumes at its landing. The landing's RAX is `RtlUnwind`'s
+    ReturnValue, or the exception code for `EXECUTE_HANDLER`. MSVC
+    landing code does not read RAX, so the exception code value is not
+    a guaranteed contract.
+    - Frames between the raise and the target are discarded without
+      returning through host code. A host frame in between that holds
+      a lock or needs cleanup is skipped.
+    - A host fault unwinds on the 64 KB alternate signal stack, and so
+      do the `__finally` funclets it runs. A fault inside one of them
+      is fatal.
+    - Exit unwinds (`RtlUnwindEx` with a NULL target frame) are fatal.
+      `EXCEPTION_COLLIDED_UNWIND` is not handled.
+    - `RtlUnwindEx` from host code uses the innermost guest call as its
+      origin. The walk may then start from the wrong frame.
+    - 32-bit guests do not unwind. `RtlUnwindEx` prints an error and
+      exits with status 1.
   - C++ `throw`/`catch` (`__CxxFrameHandler3`) is not supported.
 - An unhandled exception (a guest fault or `RaiseException`) calls the
   `SetUnhandledExceptionFilter` filter. It prints
