@@ -19,7 +19,8 @@
 #   WIN64                  1 builds the Win64 runtime (implies ARCH=x86_64): native 64-bit guest pointers,
 #                          no 32-bit trampolines or LDT setup (default 0)
 #   CC                     target C compiler (default gcc). ARCH=i686 needs a 32-bit compiler: a 32-bit cross
-#                          compiler or a multilib gcc, e.g. make ARCH=i686 CC="gcc -m32" wibo32
+#                          compiler or a multilib gcc, e.g. make ARCH=i686 CC="gcc -m32" wibo32. No -m32 is added
+#                          implicitly.
 #   LTO                    1 enables link-time optimization (default 0)
 #   WIBO_VERSION           version string (default: git describe, else "unknown")
 #   WIBO_ENABLE_LIBURING   1 enables the io_uring backend on Linux (default 0)
@@ -94,9 +95,12 @@ GENTRAMP := $(TOOLS_DIR)/gentramp
 WIBO_BUNDLE_TOOL := $(TOOLS_DIR)/wibo-bundle
 WIBO_BUNDLED := $(CURDIR)/$(WIBO_NAME)-bundled
 
-# Override with TARGET_ARCH_FLAGS= when CC already selects the 32-bit target (e.g. clang --target=i586-...).
-TARGET_ARCH_FLAGS ?= $(if $(filter i686,$(ARCH)),-m32)
-CC_TARGET_CC := $(strip $(CC) $(TARGET_ARCH_FLAGS))
+# ARCH=i686 takes its target from CC alone (e.g. CC="gcc -m32" or a cross compiler); nothing is added implicitly.
+ifeq ($(ARCH),i686)
+ifneq ($(shell printf '%s\n' '#ifndef __i386__' '#error not 32-bit' '#endif' | $(CC) -E -x c - >/dev/null 2>&1 && echo 1),1)
+$(error ARCH=i686 needs a 32-bit C compiler: set CC="gcc -m32" (multilib) or a 32-bit cross compiler)
+endif
+endif
 GENTRAMP_ARCH := $(if $(filter x86_64,$(ARCH)),x86_64,x86)
 
 ifeq ($(DEBUG),1)
@@ -143,7 +147,7 @@ endif
 
 HAVE_GETTID := $(shell printf '%s\n' '#include <pthread.h>' \
 	'int main(void) { return (int)(long)(void *)pthread_gettid_np; }' \
-	| $(CC_TARGET_CC) -D_GNU_SOURCE -x c - -o /dev/null -lpthread >/dev/null 2>&1 && echo 1)
+	| $(CC) -D_GNU_SOURCE -x c - -o /dev/null -lpthread >/dev/null 2>&1 && echo 1)
 ifeq ($(HAVE_GETTID),1)
 GETTID_DEFS := -DHAVE_PTHREAD_GETTID_NP=1
 endif
@@ -269,7 +273,7 @@ define TRAMPOLINE_RULE
 $$(GEN_DIR)/$(1)_trampolines.stamp: $$(GENTRAMP) $$(TRAMP_HDRS_$(1)) | $$(GEN_DIR)
 	$$(GENTRAMP) --dll $(1) --headers $$(TRAMP_HDRS_$(1)) $$(TRAMP_ARCH_ARGS) \
 		--out-asm $$(GEN_DIR)/$(1)_trampolines.S --out-hdr $$(GEN_DIR)/$(1)_trampolines.h \
-		-I . -I dll -I src -D WIBO_CODEGEN=1 --cc "$$(CC_TARGET_CC) $$(WIN64_DEFS)"
+		-I . -I dll -I src -D WIBO_CODEGEN=1 --cc "$$(CC) $$(WIN64_DEFS)"
 	@touch $$@
 endef
 $(foreach m,$(TRAMP_MODULES),$(eval $(call TRAMPOLINE_RULE,$(m))))
@@ -282,13 +286,13 @@ WIBO_DEPS := $(WIBO_OBJS:.o=.d)
 
 # -std is C-only; the assembler sources reuse the same flags without it. LTO applies only to C compiles and links.
 WIN64_DEFS := $(if $(filter 1,$(WIN64)),-DWIBO_GUEST64=1)
-WIBO_COMMON_FLAGS := -Wall -Wextra $(OPT_FLAGS) $(TARGET_ARCH_FLAGS) \
+WIBO_COMMON_FLAGS := -Wall -Wextra $(OPT_FLAGS) \
 	$(GNU_ONLY_FLAGS) $(WINE_DLL_DEFS) $(GETTID_DEFS) $(WIN64_DEFS) -DWIBO_ENABLE_LIBURING=$(ENABLE_URING) \
 	-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_TIME_BITS=64 \
 	-I dll -I src -I $(GEN_DIR) -MMD -MP $(EXTRA_CFLAGS)
 WIBO_CFLAGS := $(WIBO_COMMON_FLAGS) $(LTO_FLAGS)
 WIBO_CSTD := -std=gnu11
-WIBO_LDFLAGS := $(TARGET_ARCH_FLAGS) $(LTO_FLAGS) $(GNU_ONLY_FLAGS) $(PLATFORM_LDFLAGS) $(EXTRA_LDFLAGS)
+WIBO_LDFLAGS := $(LTO_FLAGS) $(GNU_ONLY_FLAGS) $(PLATFORM_LDFLAGS) $(EXTRA_LDFLAGS)
 WIBO_LIBS := $(PLATFORM_LIBS) $(URING_LIBS) $(EXTRA_LIBS)
 
 # Objects are rebuilt when the compile flags change (e.g. after toggling DEBUG or CC); the stamp only

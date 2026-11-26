@@ -35,8 +35,8 @@ Build variables (pass on the command line, e.g. `make DEBUG=1 wibo64`):
 | ------------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
 | `DEBUG`                   | `0`                    | `1` builds with `-O0 -g3`; `0` builds with `-O3 -DNDEBUG`                                    |
 | `WIN64`                   | `0`                    | `1` selects the 64-bit loader (`wibo64`), used by `make` and `make test`                     |
-| `ARCH`                    | `x86_64` on x86_64 hosts and macOS, else `i686` | `i686` (native 32-bit, `-m32`) or `x86_64` (64-bit host running PE32 guests via mode switching). `WIBO_64=1` is shorthand for `ARCH=x86_64` |
-| `CC`                      | `gcc` (`cc` on macOS)  | Target C compiler. Only needed for `ARCH=i686`, which requires a 32-bit compiler or multilib gcc, e.g. `make ARCH=i686 CC="gcc -m32" wibo32` |
+| `ARCH`                    | `x86_64` on x86_64 hosts and macOS, else `i686` | `i686` (native 32-bit host build; nothing is added implicitly, so set `CC` to a 32-bit compiler) or `x86_64` (64-bit host running PE32 guests via mode switching). `WIBO_64=1` is shorthand for `ARCH=x86_64` |
+| `CC`                      | `gcc` (`cc` on macOS)  | Target C compiler. `ARCH=i686` requires a 32-bit compiler, e.g. `CC="gcc -m32"` with multilib gcc or a cross compiler such as `i686-linux-gnu-gcc`; the build stops early if it is not 32-bit |
 | `LTO`                     | `0`                    | Set to `1` to build with `-flto`                                                             |
 | `WIBO_ENABLE_LIBURING`    | `0`                    | Set to `1` to enable the io_uring backend (links system `liburing`)                          |
 | `WIBO_ENABLE_WINE_DLLS`   | `1`                    | Set to `0` to skip embedding the Wine CRT DLLs (see below)                                   |
@@ -49,7 +49,7 @@ Available configurations:
 
 - `make wibo32`: PE32 loader (release; x86_64 host binary by default)
 - `make DEBUG=1 wibo32`: PE32 loader (debug)
-- `make ARCH=i686 CC="gcc -m32" wibo32`: native 32-bit PE32 loader (needs a 32-bit host)
+- `make ARCH=i686 CC="gcc -m32" wibo32`: native 32-bit ELF that runs PE32 guests (needs multilib or a 32-bit cross compiler; the default `wibo32` on an x86_64 host is a 64-bit ELF)
 - `make wibo64`: 64-bit Linux loader for PE32+ programs (release)
 - `make DEBUG=1 wibo64`: 64-bit Linux loader for PE32+ programs (debug)
 - macOS: `make` and `make DEBUG=1` build an x86_64 binary (`./wibo32`)
@@ -104,10 +104,11 @@ wibo -- test.exe a b c
 
 `wibo-bundle` packs a PE program and its DLLs into a single ELF. The bundle runs the program
 with wibo's loader and serves the bundled DLLs and spawned children from memory. PE32 (32-bit)
-and PE32+ (64-bit) images are both supported; the image architecture selects the stub build.
+and PE32+ (64-bit) images are both supported. A PE32+ program needs an x86_64 `--stub` (`wibo64`). A PE32 program accepts
+an x86_64 `--stub` (the default `wibo32`) or an i386 one (`CC="gcc -m32"` build).
 
 ```sh
-make                                  # builds build/tools/wibo-bundle and ./wibo32 (PE32)
+make                                  # builds build/tools/wibo-bundle and ./wibo32 (x86_64 ELF running PE32)
 build/tools/wibo-bundle -o app --stub ./wibo32 prog.exe lib.dll
 ./app arg1 arg2                       # arguments are passed literally
 
@@ -124,10 +125,10 @@ make WIN64=1 bundle WIBO_BUNDLE_FILES="prog64.exe lib64.dll"   # -> ./wibo64-bun
 
 Notes:
 - The first file is the program; the rest are DLLs. Names match case-insensitively. Use `--pak -o out.pak ...` to write only the payload.
-- All files in a bundle must share one architecture, and `--stub` must be the wibo build for it. The bundler rejects mismatches.
+- All files in a bundle must share one architecture. The bundler checks the `--stub` ELF machine: PE32+ needs an x86_64 stub, and PE32 accepts an i386 or x86_64 stub. It cannot tell `wibo64` from `wibo32` apart, so a PE32+ bundle built on a `wibo32` stub fails at run time.
 - Bundled programs receive their arguments literally: wibo's own options (`-C`, `--cmdline`, `--`) do not apply. `WIBO_DEBUG` still works.
 - A first argument of exactly `--bundle-child` is consumed as an internal marker.
-- `make test-bundle` (or `make WIN64=1 test-bundle`) checks a bundle with a DLL, a bundle without DLLs, and the architecture check. To run the 32-bit build on a 64-bit host, set `BUNDLE_RUNNER=qemu-i386`.
+- `make test-bundle` (or `make WIN64=1 test-bundle`) checks a bundle with a DLL, a bundle without DLLs, and the stub architecture rules. To run an i386 build on a 64-bit host, set `BUNDLE_RUNNER=qemu-i386`.
 
 ## Known limitations
 

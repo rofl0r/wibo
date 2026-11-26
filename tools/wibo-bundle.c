@@ -5,7 +5,7 @@
 //   WIBO_BUNDLE_FILES=...)
 //
 // The first input is the program that runs; the others are served to it as if they sat next to it. All inputs must
-// share one architecture, and a --stub must be the wibo build for it (wibo for PE32, wibo64 for PE32+).
+// share one architecture. A PE32+ program needs an x86_64 --stub; a PE32 program accepts an i386 or x86_64 --stub.
 
 #include "bundle_format.h"
 
@@ -115,7 +115,7 @@ static Arch peArch(const uint8_t *data, size_t size) {
 	}
 }
 
-// Reads e_machine of a little-endian ELF executable. The stub must match the bundled programs' architecture.
+// Reads e_machine of a little-endian ELF executable. Callers decide which architectures a stub may carry.
 static Arch elfArch(const uint8_t *data, size_t size) {
 	const uint8_t kElfClass32 = 1, kElfClass64 = 2, kElfDataLsb = 1;
 	const uint16_t kEmI386 = 3, kEmX86_64 = 62;
@@ -266,8 +266,12 @@ int main(int argc, char **argv) {
 	size_t stubSize = 0;
 	uint8_t *stub = readFile(stubPath, &stubSize);
 	Arch stubArch = elfArch(stub, stubSize);
-	if (stubArch != arch) {
-		die("stub %s is built for %s but the bundled programs are %s (use wibo for PE32 and wibo64 for PE32+)",
+	// wibo64 (WIN64) and wibo32 (x86_64 host) are both x86_64 ELF builds and look identical here. An i386 stub is
+	// the 32-bit host build and can run only PE32 guests.
+	bool stubRuns = arch == ARCH_X64 ? stubArch == ARCH_X64 : (stubArch == ARCH_X86 || stubArch == ARCH_X64);
+	if (!stubRuns) {
+		die("stub %s is built for %s but the bundled programs are %s (PE32+ needs an x86_64 stub; PE32 accepts i386 or "
+			"x86_64)",
 			stubPath, archName(stubArch), archName(arch));
 	}
 	if (stubSize >= WIBO_BUNDLE_TRAILER_SIZE && memcmp(stub + stubSize - 8, WIBO_BUNDLE_TRAILER_MAGIC, 8) == 0) {

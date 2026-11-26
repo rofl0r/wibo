@@ -18,28 +18,33 @@ jobs:
           - display: Release (32-bit)
             debug: 0
             arch: i686
+            cc: gcc -m32
             lto: 1
             asset: wibo-i686
           - display: Debug (32-bit)
             debug: 1
             arch: i686
+            cc: gcc -m32
             lto: 0
             asset: wibo-i686-debug
           - display: Release (64-bit)
             debug: 0
             arch: x86_64
+            cc: gcc
             lto: 1
             liburing: 1
             asset: wibo-x86_64
           - display: Debug (64-bit)
             debug: 1
             arch: x86_64
+            cc: gcc
             lto: 0
             liburing: 1
             asset: wibo-x86_64-debug
           - display: Release (Win64 runtime)
             debug: 0
             arch: x86_64
+            cc: gcc
             win64: 1
             lto: 1
             liburing: 1
@@ -47,6 +52,7 @@ jobs:
     env:
       DEBUG: ${{ matrix.debug || 0 }}
       ARCH: ${{ matrix.arch }}
+      CC: ${{ matrix.cc }}
       WIN64: ${{ matrix.win64 || 0 }}
       LTO: ${{ matrix.lto }}
       WIBO_ENABLE_LIBURING: ${{ matrix.liburing || 0 }}
@@ -77,7 +83,6 @@ jobs:
         run: make test
 
       - name: Bundle tests
-        if: ${{ matrix.win64 == 1 }}
         run: make test-bundle
 
       - name: Stage artifact
