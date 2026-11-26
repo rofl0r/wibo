@@ -7,10 +7,9 @@
 #   make DEBUG=1 wibo64         build with -O0 -g3
 #   make test [TEST=name]       build the fixtures for the selected runtime and run them under wibo
 #   make WIN64=1 test           run the Win64 fixtures under ./wibo64
-#   make bundle WIBO_BUNDLE_FILES="app.exe lib.dll"
-#                               build ./wibo32-bundled with the files linked in (Linux)
-#   build/tools/wibo-bundle -o app --stub ./wibo32 app.exe lib.dll
-#                               write a standalone executable (any host with a plain wibo)
+#   make test-bundle            run the --bundle checks (builds the fixtures for the selected runtime)
+#
+# Bundles: `./wibo32 --bundle -o app app.exe lib.dll` writes a standalone executable (see README.md).
 #
 # Variables (command line or environment):
 #   DEBUG                  1 builds with -O0 -g3; 0 builds with -O3 -DNDEBUG (default 0)
@@ -29,7 +28,6 @@
 #   TEST_TIMEOUT           seconds allowed per fixture test (default 1500)
 #   CFLAGS, LDFLAGS        passed to the wibo compile and link steps (e.g. CFLAGS=-flto LDFLAGS=-flto)
 #   EXTRA_CFLAGS, EXTRA_LDFLAGS, EXTRA_LIBS  appended to the wibo build flags
-#   WIBO_BUNDLE_FILES      first file is the Win64 program run by the bundle, the rest are its DLLs
 
 .DEFAULT_GOAL := all
 
@@ -102,8 +100,6 @@ WIBO_NAME := $(if $(filter 1,$(WIN64)),wibo64,wibo32)
 WIBO := $(CURDIR)/$(WIBO_NAME)
 TOOLS_DIR := $(BUILD_ROOT)/tools
 GENTRAMP := $(TOOLS_DIR)/gentramp
-WIBO_BUNDLE_TOOL := $(TOOLS_DIR)/wibo-bundle
-WIBO_BUNDLED := $(CURDIR)/$(WIBO_NAME)-bundled
 
 GENTRAMP_ARCH := $(if $(filter x86_64,$(TARGET_ARCH)),x86_64,x86)
 
@@ -301,11 +297,11 @@ $(CFLAGS_STAMP): FORCE | $(BUILD_DIR)
 	@printf '%s\n' '$(CC) $(WIBO_CFLAGS) $(WIBO_CSTD)' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
-# The link is redone when the linker command changes (CC, LDFLAGS, libraries). Otherwise a CC switch would
-# leave the old binary in place once the objects were up to date.
-LINK_STAMP := $(BUILD_DIR)/link.stamp
+# The link is redone when the linker command or the object directory changes. The stamp is keyed by the executable
+# because a CC switch (e.g. CC="gcc -m32") moves the objects to another build directory but writes the same output.
+LINK_STAMP := $(BUILD_ROOT)/$(WIBO_NAME).link.stamp
 $(LINK_STAMP): FORCE | $(BUILD_DIR)
-	@printf '%s\n' '$(CC) $(WIBO_LDFLAGS) $(WIBO_LIBS)' > $@.tmp
+	@printf '%s\n' '$(CC) $(WIBO_LDFLAGS) $(WIBO_LIBS) $(OBJ_DIR)' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
 define EMBED_RULE
@@ -318,17 +314,17 @@ ifeq ($(TARGET_OS),Darwin)
 $(OBJ_DIR)/src/setup_darwin.c.o: OBJ_CFLAGS += -fms-extensions
 endif
 
-.PHONY: all clean distclean fixtures test test-bundle check-mingw gentramp bundle-tool bundle format check-format list-tests print-wibo FORCE
+.PHONY: all clean distclean fixtures test test-bundle check-mingw gentramp format check-format list-tests print-wibo FORCE
 
-all: $(WIBO) $(WIBO_BUNDLE_TOOL)
+all: $(WIBO)
 
 # The executables are named after their targets. Each is built by a sub-make because the object directory
 # depends on WIN64 (set at parse time); FORCE lets the sub-make decide what is stale.
 wibo32: FORCE
-	@$(MAKE) --no-print-directory WIN64=0 $(CURDIR)/wibo32 $(WIBO_BUNDLE_TOOL)
+	@$(MAKE) --no-print-directory WIN64=0 $(CURDIR)/wibo32
 
 wibo64: FORCE
-	@$(MAKE) --no-print-directory WIN64=1 $(CURDIR)/wibo64 $(WIBO_BUNDLE_TOOL)
+	@$(MAKE) --no-print-directory WIN64=1 $(CURDIR)/wibo64
 
 print-wibo:
 	@echo $(WIBO)
@@ -360,56 +356,6 @@ $(GENTRAMP): tools/gentramp.c | $(TOOLS_DIR)
 
 gentramp: $(GENTRAMP)
 
-$(WIBO_BUNDLE_TOOL): tools/wibo-bundle.c src/bundle_format.h | $(TOOLS_DIR)
-	$(HOST_CC) -std=gnu11 -O2 -Wall -Wextra -I src -o $@ $<
-
-bundle-tool: $(WIBO_BUNDLE_TOOL)
-
-# Linking the payload in: the pak is .incbin'd between the weak symbols that src/bundle.c looks up.
-ifneq ($(WIBO_BUNDLE_FILES),)
-ifneq ($(TARGET_OS),Linux)
-$(error WIBO_BUNDLE_FILES is only supported on Linux)
-endif
-BUNDLE_PAK := $(GEN_DIR)/bundle.pak
-BUNDLE_PAYLOAD_S := $(GEN_DIR)/bundle_payload.S
-BUNDLE_PAYLOAD_O := $(OBJ_DIR)/generated/bundle_payload.S.o
-
-# The list stamp is rewritten only when the file list changes, so editing WIBO_BUNDLE_FILES rebuilds the pak.
-BUNDLE_LIST := $(GEN_DIR)/bundle.list
-
-$(BUNDLE_LIST): FORCE | $(GEN_DIR)
-	@printf '%s\n' '$(WIBO_BUNDLE_FILES)' > $@.tmp
-	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
-
-$(BUNDLE_PAK): $(WIBO_BUNDLE_TOOL) $(WIBO_BUNDLE_FILES) $(BUNDLE_LIST) | $(GEN_DIR)
-	$(WIBO_BUNDLE_TOOL) --pak -o $@ $(WIBO_BUNDLE_FILES)
-
-$(BUNDLE_PAYLOAD_S): $(BUNDLE_PAK) | $(GEN_DIR)
-	printf '%s\n' \
-		'    .section .rodata' \
-		'    .balign 16' \
-		'    .globl wibo_embeddedPak' \
-		'    .type wibo_embeddedPak, @object' \
-		'wibo_embeddedPak:' \
-		'    .incbin "$(abspath $(BUNDLE_PAK))"' \
-		'    .globl wibo_embeddedPakEnd' \
-		'wibo_embeddedPakEnd:' \
-		'    .section .note.GNU-stack,"",@progbits' > $@.tmp
-	mv $@.tmp $@
-
-$(BUNDLE_PAYLOAD_O): $(BUNDLE_PAYLOAD_S)
-	@mkdir -p $(@D)
-	$(CC) $(WIBO_COMMON_FLAGS) -c $< -o $@
-
-$(WIBO_BUNDLED): $(WIBO_OBJS) $(BUNDLE_PAYLOAD_O) $(LINK_STAMP) | $(BUILD_DIR)
-	$(CC) $(WIBO_LDFLAGS) -o $@ $(WIBO_OBJS) $(BUNDLE_PAYLOAD_O) $(WIBO_LIBS)
-
-bundle: $(WIBO_BUNDLED)
-else
-bundle:
-	@echo 'error: set WIBO_BUNDLE_FILES="program.exe [lib.dll ...]" to build $(WIBO_BUNDLED)' >&2
-	@exit 1
-endif
 
 $(VENDOR_DIR)/%.dll:
 	@mkdir -p $(@D)
@@ -497,8 +443,8 @@ test: $(WIBO) $(TEST_OUTS)
 	if [ $$fail -ne 0 ]; then echo "error: fixture test(s) failed" >&2; exit 1; fi
 
 # Bundle checks use the fixtures of this build. Set BUNDLE_RUNNER=qemu-i386 to run the 32-bit stub on a 64-bit host.
-test-bundle: $(WIBO) $(WIBO_BUNDLE_TOOL) $(FIXTURE_OUTS) $(FIXTURE_DLL_OUTS)
-	BUNDLE_RUNNER="$(BUNDLE_RUNNER)" sh test/bundle_test.sh $(abspath $(WIBO_BUNDLE_TOOL)) $(abspath $(WIBO)) $(abspath $(TEST_BIN_DIR))
+test-bundle: $(WIBO) $(FIXTURE_OUTS) $(FIXTURE_DLL_OUTS)
+	BUNDLE_RUNNER="$(BUNDLE_RUNNER)" sh test/bundle_test.sh $(abspath $(WIBO)) $(abspath $(TEST_BIN_DIR))
 
 list-tests:
 	@for t in $(FIXTURE_NAMES); do echo wibo.$$t; done
@@ -515,10 +461,10 @@ $(BUILD_DIR) $(GEN_DIR) $(TEST_BIN_DIR) $(TOOLS_DIR) $(VENDOR_DIR):
 	@mkdir -p $@
 
 clean:
-	rm -rf $(BUILD_DIR) wibo32 wibo64 wibo32-bundled wibo64-bundled
+	rm -rf $(BUILD_DIR) wibo32 wibo64
 
 distclean:
-	rm -rf $(BUILD_ROOT) wibo32 wibo64 wibo32-bundled wibo64-bundled
+	rm -rf $(BUILD_ROOT) wibo32 wibo64
 
 FORCE:
 

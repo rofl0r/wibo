@@ -36,7 +36,7 @@ Build variables (pass on the command line, e.g. `make DEBUG=1 wibo64`):
 | `DEBUG`                   | `0`                    | `1` builds with `-O0 -g3`; `0` builds with `-O3 -DNDEBUG`                                    |
 | `WIN64`                   | `0`                    | `1` selects the 64-bit loader (`wibo64`), used by `make` and `make test`                     |
 | `CC`                      | `gcc`                  | Target C compiler. The architecture and OS it generates select the build: `__x86_64__` or `__i386__` picks the loader architecture (see below), and `__linux__` or `__APPLE__` picks the platform. Pass flags with it if needed, e.g. `CC="gcc -m32"`. The build stops early if the target is neither |
-| `CFLAGS`, `LDFLAGS`       | empty                  | Passed to the wibo compile and link steps, e.g. `make CFLAGS=-flto LDFLAGS=-flto` for link-time optimization. Host tools (`gentramp`, `wibo-bundle`) are not affected |
+| `CFLAGS`, `LDFLAGS`       | empty                  | Passed to the wibo compile and link steps, e.g. `make CFLAGS=-flto LDFLAGS=-flto` for link-time optimization. Host tools (`gentramp`) are not affected |
 | `WIBO_ENABLE_LIBURING`    | `0`                    | Set to `1` to enable the io_uring backend (links system `liburing`)                          |
 | `WIBO_ENABLE_WINE_DLLS`   | `1`                    | Set to `0` to skip embedding the Wine CRT DLLs (see below)                                   |
 | `MINGW_CC`, `MINGW_WINDRES` | `i686-w64-mingw32-gcc`, `i686-w64-mingw32-windres` (`x86_64-w64-mingw32-gcc` when `WIN64=1`) | MinGW tools used to build the test fixtures |
@@ -104,33 +104,28 @@ wibo -- test.exe a b c
 
 ### Bundling a program into one Linux executable (experimental)
 
-`wibo-bundle` packs a PE program and its DLLs into a single ELF. The bundle runs the program
-with wibo's loader and serves the bundled DLLs and spawned children from memory. PE32 (32-bit)
-and PE32+ (64-bit) images are both supported. A PE32+ program needs an x86_64 `--stub` (`wibo64`). A PE32 program accepts
-an x86_64 `--stub` (the default `wibo32`) or an i386 one (`CC="gcc -m32"` build).
+`wibo --bundle` packs a PE program and its DLLs into a single executable. The output is a copy of the
+running wibo followed by a payload, so it needs no other files. The bundle runs its program with wibo's
+loader and serves the bundled DLLs, and any children it spawns, from memory.
 
 ```sh
-make                                  # builds build/tools/wibo-bundle and ./wibo32 (x86_64 ELF running PE32)
-build/tools/wibo-bundle -o app --stub ./wibo32 prog.exe lib.dll
-./app arg1 arg2                       # arguments are passed literally
-
-make wibo64                          # builds ./wibo64 (PE32+, no -m32 needed)
-build/tools/wibo-bundle -o app64 --stub ./wibo64 prog64.exe lib64.dll
+./wibo32 --bundle -o app prog.exe lib.dll     # the first FILE is the program; the rest are DLLs
+./app arg1 arg2                               # arguments reach the program literally
 ```
 
-Or embed the payload into a new wibo build (Linux only):
-
-```sh
-make bundle WIBO_BUNDLE_FILES="prog.exe lib.dll"               # -> ./wibo32-bundled
-make WIN64=1 bundle WIBO_BUNDLE_FILES="prog64.exe lib64.dll"   # -> ./wibo64-bundled
-```
-
-Notes:
-- The first file is the program; the rest are DLLs. Names match case-insensitively. Use `--pak -o out.pak ...` to write only the payload.
-- All files in a bundle must share one architecture. The bundler checks the `--stub` ELF machine: PE32+ needs an x86_64 stub, and PE32 accepts an i386 or x86_64 stub. It cannot tell `wibo64` from `wibo32` apart, so a PE32+ bundle built on a `wibo32` stub fails at run time.
-- Bundled programs receive their arguments literally: wibo's own options (`-C`, `--cmdline`, `--`) do not apply. `WIBO_DEBUG` still works.
-- A first argument of exactly `--bundle-child` is consumed as an internal marker.
-- `make test-bundle` (or `make WIN64=1 test-bundle`) checks a bundle with a DLL, a bundle without DLLs, and the stub architecture rules. To run an i386 build on a 64-bit host, set `BUNDLE_RUNNER=qemu-i386`.
+- The first file is the program that runs. The others are found by basename, case-insensitively.
+  Names must be unique under that comparison.
+- Each file must be an image of the build that packs it: PE32 for a default build, PE32+ for `WIN64=1`.
+  The packer rejects anything else, including a mix of the two.
+- Packing uses the wibo binary that runs `--bundle`, so the bundle inherits that build's architecture.
+  The binary is located through `argv[0]` (searched in `PATH` for a bare name), not `/proc/self/exe`.
+  Run wibo under a path it can resolve.
+- A bundle receives its arguments literally: wibo's own options (`-C`, `--cmdline`, `--`) do not apply.
+  `--bundle` is passed through to the program as well. `WIBO_DEBUG` still works.
+- Bundling is Linux-only. `wibo --bundle --help` prints the usage.
+- `make test-bundle` (or `make WIN64=1 test-bundle`) checks a bundle with a DLL, a bundle without DLLs,
+  argument pass-through, and the packer's name and architecture rules. To run an i386 build on a 64-bit
+  host, set `BUNDLE_RUNNER=qemu-i386`.
 
 ## Known limitations
 

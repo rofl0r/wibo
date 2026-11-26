@@ -137,6 +137,9 @@ static void printHelp(const char *argv0, bool error) {
 	fprintf(out, "Subcommands:\n");
 	fprintf(out, "  path                  Convert between host and Windows-style paths\n");
 	fprintf(out, "                        (see '%s path --help' for details)\n", exeName);
+	fprintf(out, "  --bundle -o OUT FILE...\n");
+	fprintf(out, "                        Pack FILE... into the standalone executable OUT\n");
+	fprintf(out, "                        (see '%s --bundle --help' for details)\n", exeName);
 	fprintf(out, "\n");
 	fprintf(out, "Examples:\n");
 	fprintf(out, "  # Normal usage\n");
@@ -265,7 +268,7 @@ static void appendQuotedArg(Buf *cmd, const char *arg) {
 }
 
 int main(int argc, char **argv) {
-	wibo_bundleInit();
+	wibo_bundleInit(argv[0]);
 
 	// A bundled executable runs its main program with literal arguments so that wibo's own options cannot
 	// shadow the program's. A child spawned by a bundled wibo carries WIBO_BUNDLE_CHILD_ARG, which we strip so
@@ -291,6 +294,11 @@ int main(int argc, char **argv) {
 		argc += 1;
 		argv = bundleArgv;
 		literalArgs = true;
+	}
+
+	// A bundle carries no bundler mode: `--bundle` reaches its guest as an ordinary argument.
+	if (!wibo_bundleActive() && argc >= 2 && strcmp(argv[1], "--bundle") == 0) {
+		return wibo_bundleMain(argc - 2, argv + 2, argv[0]);
 	}
 
 	if (!literalArgs && argc >= 2 && strcmp(argv[1], "path") == 0) {

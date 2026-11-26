@@ -1,8 +1,6 @@
 wibo
 wibo32
 wibo64
-wibo32-bundled
-wibo64-bundled
 build/
 *.o
 

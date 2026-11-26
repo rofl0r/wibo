@@ -1,14 +1,13 @@
 #!/bin/sh
-# End-to-end checks for wibo-bundle: a bundle runs from another directory, a bundle without DLLs runs, and the stub
-# architecture rules hold (PE32+ needs an x86_64 stub; PE32 accepts an i386 or x86_64 stub).
+# End-to-end checks for `wibo --bundle`: a bundle runs from another directory, a bundle without DLLs runs, extra
+# arguments reach the guest, and the packer rejects duplicate names and mixed PE machine types.
 #
-# usage: bundle_test.sh TOOL STUB FIXTURE_DIR
-# Set BUNDLE_RUNNER (e.g. qemu-i386) when the host cannot execute STUB directly.
+# usage: bundle_test.sh WIBO FIXTURE_DIR
+# Set BUNDLE_RUNNER (e.g. qemu-i386) when the host cannot execute the bundles directly.
 set -eu
 
-tool=$1
-stub=$2
-fixtures=$3
+wibo=$1
+fixtures=$2
 runner=${BUNDLE_RUNNER:-}
 
 work=$(mktemp -d)
@@ -20,35 +19,43 @@ fail() {
 	exit 1
 }
 
-"$tool" -o "$work/dll" --stub "$stub" "$fixtures/test_external_dll.exe" "$fixtures/external_exports.dll"
+"$wibo" --bundle -o "$work/dll" "$fixtures/test_external_dll.exe" "$fixtures/external_exports.dll" ||
+	fail "packing a program with a DLL failed"
 (cd "$work/cwd" && $runner "$work/dll" >"$work/out") || fail "bundle with a DLL exited non-zero"
 # Windows text-mode stdout ends lines with CRLF on the 32-bit build.
 out=$(tr -d '\r' <"$work/out")
 [ "$out" = "external_exports: sum=42 attached=1" ] || fail "bundle with a DLL printed: $out"
 
-"$tool" -o "$work/nodll" --stub "$stub" "$fixtures/test_msvcrt_printf.exe"
+"$wibo" --bundle -o "$work/nodll" "$fixtures/test_msvcrt_printf.exe" || fail "packing a DLL-less program failed"
 (cd "$work/cwd" && $runner "$work/nodll" >/dev/null) || fail "bundle without DLLs exited non-zero"
 
-# Only the ELF header matters to the bundler, so header-sized files stand in for stubs of the other architecture.
-# The fixture's PE machine decides the expected outcome: PE32 (0x14c = 332) takes an x86_64 stub, PE32+ (0x8664 = 34404)
-# rejects an i386 stub.
-pe_off=$(od -An -tu4 -j60 -N4 "$fixtures/test_external_dll.exe" | tr -d ' ')
-machine=$(od -An -tu2 -j$((pe_off + 4)) -N2 "$fixtures/test_external_dll.exe" | tr -d ' ')
+# The bundle's own argv must pass through to the guest; `--bundle` here must not select bundler mode.
+(cd "$work/cwd" && $runner "$work/nodll" --bundle -o ignored >/dev/null) ||
+	fail "bundle did not pass its arguments through to the guest"
+
+if "$wibo" --bundle -o "$work/dup" "$fixtures/test_external_dll.exe" "$fixtures/external_exports.dll" \
+	"$fixtures/external_exports.dll" 2>/dev/null; then
+	fail "packer accepted a duplicate file name"
+fi
+mkdir "$work/other"
+cp "$fixtures/external_exports.dll" "$work/other/EXTERNAL_EXPORTS.DLL"
+if "$wibo" --bundle -o "$work/dup" "$fixtures/external_exports.dll" "$work/other/EXTERNAL_EXPORTS.DLL" \
+	2>/dev/null; then
+	fail "packer accepted a duplicate file name differing only in case"
+fi
+
+# Flip the DLL's PE machine to the other type (PE32 <-> PE32+). The packer must refuse a mixed bundle.
+pe_off=$(od -An -tu4 -j60 -N4 "$fixtures/external_exports.dll" | tr -d ' ')
+machine=$(od -An -tu2 -j$((pe_off + 4)) -N2 "$fixtures/external_exports.dll" | tr -d ' ')
 case $machine in
-34404)
-	printf '\177ELF\001\001\001\000\000\000\000\000\000\000\000\000\002\000\003\000\001\000\000\000' >"$work/other"
-	if "$tool" -o "$work/mismatch" --stub "$work/other" "$fixtures/test_external_dll.exe" 2>/dev/null; then
-		fail "wibo-bundle accepted an i386 stub for a PE32+ program"
-	fi
-	;;
-332)
-	printf '\177ELF\002\001\001\000\000\000\000\000\000\000\000\000\002\000\076\000\001\000\000\000' >"$work/other"
-	"$tool" -o "$work/x64stub" --stub "$work/other" "$fixtures/test_external_dll.exe" ||
-		fail "wibo-bundle rejected an x86_64 stub for a PE32 program"
-	;;
-*)
-	fail "unexpected PE machine $machine in $fixtures/test_external_dll.exe"
-	;;
+332) flipped='\144\206' ;; # 0x8664 (PE32+)
+34404) flipped='\114\001' ;; # 0x014c (PE32)
+*) fail "unexpected PE machine $machine in external_exports.dll" ;;
 esac
+cp "$fixtures/external_exports.dll" "$work/mixed.dll"
+printf "$flipped" | dd of="$work/mixed.dll" bs=1 seek=$((pe_off + 4)) conv=notrunc 2>/dev/null
+if "$wibo" --bundle -o "$work/mixed" "$fixtures/test_external_dll.exe" "$work/mixed.dll" 2>/dev/null; then
+	fail "packer accepted a DLL with a different PE machine type"
+fi
 
 echo "[  OK  ] bundle"
