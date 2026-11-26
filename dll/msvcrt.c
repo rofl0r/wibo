@@ -116,6 +116,10 @@ static void guestFree(void *ptr) {
 #endif
 }
 
+// Serializes _putenv's host environment change and the shared guest string
+// slots. Per-thread slots need no lock.
+static pthread_mutex_t g_guestStringMutex = PTHREAD_MUTEX_INITIALIZER;
+
 #ifndef WIBO_GUEST64
 static char *guestStringCopy(const char *s) {
 	size_t n = strlen(s) + 1;
@@ -125,9 +129,6 @@ static char *guestStringCopy(const char *s) {
 	}
 	return copy;
 }
-
-// Guards the shared string slots below. Per-thread slots need no lock.
-static pthread_mutex_t g_guestStringMutex = PTHREAD_MUTEX_INITIALIZER;
 
 // A slot owns at most one guest copy. Refilling it frees the previous copy, so
 // the pointer stays valid until the same slot is refilled. A NULL source leaves
@@ -1079,6 +1080,30 @@ LPSTR CDECL msvcrt_getenv(LPCSTR name) {
 	pthread_mutex_unlock(&g_guestStringMutex);
 	return value;
 #endif
+}
+
+// Like the MS CRT, an empty value removes the variable. The host environment is
+// the only store, so getenv and kernel32 environment calls see the change.
+int CDECL msvcrt__putenv(LPCSTR envstring) {
+	HOST_CONTEXT_GUARD();
+	const char *eq = envstring ? strchr(envstring, '=') : NULL;
+	if (!eq || eq == envstring) {
+		errno = EINVAL;
+		return -1;
+	}
+	size_t nameLen = (size_t)(eq - envstring);
+	char *name = malloc(nameLen + 1);
+	if (!name) {
+		errno = ENOMEM;
+		return -1;
+	}
+	memcpy(name, envstring, nameLen);
+	name[nameLen] = '\0';
+	pthread_mutex_lock(&g_guestStringMutex);
+	int rc = eq[1] ? setenv(name, eq + 1, 1) : unsetenv(name);
+	pthread_mutex_unlock(&g_guestStringMutex);
+	free(name);
+	return rc == 0 ? 0 : -1;
 }
 
 int CDECL msvcrt_setvbuf(void *stream, LPSTR buf, int mode, SIZE_T size) {

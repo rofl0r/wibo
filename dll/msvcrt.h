@@ -67,6 +67,7 @@ LPSTR CDECL msvcrt_setlocale(int category, LPCSTR locale);
 void *CDECL msvcrt_signal(int sig, void *handler);
 int CDECL msvcrt_raise(int sig);
 LPSTR CDECL msvcrt_getenv(LPCSTR name);
+int CDECL msvcrt__putenv(LPCSTR envstring);
 void *CDECL msvcrt_fopen(LPCSTR filename, LPCSTR mode);
 int CDECL msvcrt_setvbuf(void *stream, LPSTR buf, int mode, SIZE_T size);
 int CDECL msvcrt_fclose(void *stream);
