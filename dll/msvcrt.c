@@ -807,6 +807,46 @@ LONG CDECL msvcrt_strtol(LPCSTR str, GUEST_PTR *end, int base) {
 	return value;
 }
 
+// Radix 10 writes a minus sign for negative values. Other radices use the bit pattern, as the MS CRT does.
+static char *formatInteger(unsigned long long mag, bool negative, LPSTR buffer, int radix) {
+	if (radix < 2 || radix > 36) {
+		errno = EINVAL;
+		return NULL;
+	}
+	char digits[66];
+	int n = 0;
+	do {
+		int d = (int)(mag % radix);
+		digits[n++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+		mag /= radix;
+	} while (mag);
+	char *out = buffer;
+	if (negative) {
+		*out++ = '-';
+	}
+	while (n) {
+		*out++ = digits[--n];
+	}
+	*out = '\0';
+	return buffer;
+}
+
+char *CDECL msvcrt__itoa(int value, LPSTR buffer, int radix) {
+	HOST_CONTEXT_GUARD();
+	if (value < 0 && radix == 10) {
+		return formatInteger(-(long long)value, true, buffer, radix);
+	}
+	return formatInteger((unsigned int)value, false, buffer, radix);
+}
+
+char *CDECL msvcrt__ltoa(LONG value, LPSTR buffer, int radix) {
+	HOST_CONTEXT_GUARD();
+	if (value < 0 && radix == 10) {
+		return formatInteger(-(long long)value, true, buffer, radix);
+	}
+	return formatInteger((uint32_t)value, false, buffer, radix);
+}
+
 LPSTR CDECL msvcrt_strerror(int errnum) {
 	HOST_CONTEXT_GUARD();
 #ifdef WIBO_GUEST64

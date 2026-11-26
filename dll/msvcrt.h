@@ -44,6 +44,8 @@ LPSTR CDECL msvcrt__strupr(LPSTR str);
 int CDECL msvcrt_atoi(LPCSTR str);
 LONG CDECL msvcrt_atol(LPCSTR str);
 LONG CDECL msvcrt_strtol(LPCSTR str, GUEST_PTR *end, int base);
+char *CDECL msvcrt__itoa(int value, LPSTR buffer, int radix);
+char *CDECL msvcrt__ltoa(LONG value, LPSTR buffer, int radix);
 LPSTR CDECL msvcrt_strerror(int errnum);
 int CDECL msvcrt_tolower(int ch);
 SIZE_T CDECL msvcrt_wcslen(LPCWSTR str);
