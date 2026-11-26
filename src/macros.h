@@ -59,7 +59,6 @@
 #define ASM_RODATA_SECTION ".pushsection __TEXT, __const"
 #endif
 
-// clang-format off
 #define INCLUDE_BIN(symbol, file)                                 \
     asm(ASM_RODATA_SECTION "\n"                                   \
         ".globl " SYMBOL_NAME_STR(symbol) "\n"                    \
@@ -70,6 +69,5 @@
         ".popsection\n");                                         \
     extern const uint8_t symbol[];                                \
     extern const uint8_t GLUE(symbol, End)[];
-// clang-format on
 #define INCLUDE_BIN_SIZE(symbol) ((size_t)((uintptr_t)&GLUE(symbol, End) - (uintptr_t)&symbol))
 #endif

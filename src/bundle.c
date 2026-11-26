@@ -462,7 +462,7 @@ static void printBundleUsage(const char *exeName, FILE *out) {
 	fprintf(out, "\n");
 	fprintf(out, "Packs FILE... into the standalone executable OUT. The first FILE is the program that runs;\n");
 	fprintf(out, "the others are available to it by basename. All files must be images of this build's\n");
-	fprintf(out, "architecture (PE32 for a default build, PE32+ for WIN64=1).\n");
+	fprintf(out, "architecture (PE32 for wibo32, PE32+ for wibo64).\n");
 }
 
 int wibo_bundleMain(int argc, char **argv, const char *argv0) {

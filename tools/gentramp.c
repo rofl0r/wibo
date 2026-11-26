@@ -1478,20 +1478,51 @@ static void emitThunk32(Buf *o, const Sig *f, int h2g) {
         bline(o, "\tret");
 }
 
+/* Variadic guests: slots past the declared parameters are forwarded as 64-bit integers, so the
+ * host's va_arg sees the MS argument list. The host only reads the slots the format consumes. */
+static const int kVarargSlots = 16;
+
 static void emitThunk64(Buf *o, const Sig *f, int h2g) {
     const char *callTarget = h2g ? "edi" : f->name;
     long align = h2g ? 0 : 16;
+    Ty *srcSlotArgs[kVarargSlots + 8];
+    Ty *tgtSlotArgs[kVarargSlots + 8];
+    Ty **srcArgs = f->args;
+    Ty **tgtArgs = f->args;
+    int nslots = f->nargs;
 
     if (f->variadic) {
+        static Ty *sU32, *sU64;
+
         if (f->sourceCc != CC_C || f->targetCc != CC_C)
             fatal("variadic function %s must be cdecl", f->name);
-        bline(o, "\tjmp %s", callTarget);
-        return;
+        if (h2g) {
+            bline(o, "\tjmp %s", callTarget);
+            return;
+        }
+        if (f->nargs > 8)
+            fatal("variadic function %s has too many fixed arguments", f->name);
+        if (!sU32) {
+            sU32 = newTy(TY_UINT);
+            sU64 = newTy(TY_ULONG);
+        }
+        /* Guest variadic slots are 4-byte cdecl stack entries; the host sees them zero-extended to 8 bytes. */
+        for (int i = 0; i < f->nargs; i++) {
+            srcSlotArgs[i] = f->args[i];
+            tgtSlotArgs[i] = f->args[i];
+        }
+        for (int i = f->nargs; i < f->nargs + kVarargSlots; i++) {
+            srcSlotArgs[i] = sU32;
+            tgtSlotArgs[i] = sU64;
+        }
+        srcArgs = srcSlotArgs;
+        tgtArgs = tgtSlotArgs;
+        nslots = f->nargs + kVarargSlots;
     }
 
-    Layout src = computeLayout(f->args, f->nargs, f->sourceCc, h2g ? ARCH_X86_64 : ARCH_X86, h2g ? 24 : 20,
+    Layout src = computeLayout(srcArgs, nslots, f->sourceCc, h2g ? ARCH_X86_64 : ARCH_X86, h2g ? 24 : 20,
                                h2g ? 1 : 0);
-    Layout tgt = computeLayout(f->args, f->nargs, f->targetCc, h2g ? ARCH_X86 : ARCH_X86_64, 0, 0);
+    Layout tgt = computeLayout(tgtArgs, nslots, f->targetCc, h2g ? ARCH_X86 : ARCH_X86_64, 0, 0);
     char r[16];
 
     if (h2g) {
@@ -1574,10 +1605,10 @@ static void emitThunk64(Buf *o, const Sig *f, int h2g) {
     if (align > 0)
         bline(o, "\tand rsp, ~%ld", align - 1);
 
-    for (int i = 0; i < f->nargs; i++) {
+    for (int i = 0; i < nslots; i++) {
         const Place *t = &tgt.places[i];
         const Place *s = &src.places[i];
-        const Ty *arg = f->args[i];
+        const Ty *arg = srcArgs[i];
         if (t->onStack) {
             if (s->onStack) {
                 x64Reg(r, "rax", s->slot);
@@ -1645,10 +1676,6 @@ static void emitThunkWin64(Buf *o, const Sig *f) {
     const long kHomeOff = 16;  /* [rbp+16] is the first shadow slot: rbp = entry rsp - 8 */
     const long kStackOff = 48; /* [rbp+48] is the 5th argument */
     const int kXmmSaved = 10;  /* xmm6..xmm15 */
-    /* Variadic guests: slots past the declared parameters are forwarded as 64-bit integers, so the
-     * host's va_arg sees the MS argument list. The host only reads the slots the format consumes. */
-    const int kVarargSlots = 16;
-
     if (f->variadic && f->nargs > kVarargSlots)
         fatal("variadic function %s has too many fixed arguments", f->name);
     static Ty *sU64;

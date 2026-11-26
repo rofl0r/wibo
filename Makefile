@@ -1,41 +1,40 @@
 # wibo build system (GNU Make). See README.md for details.
 #
-#   make                        build ./wibo32 (PE32 guests), or ./wibo64 when WIN64=1
-#   make wibo32                 build ./wibo32 (PE32 guests)
-#   make wibo64                 build ./wibo64 (PE32+ guests)
-#   make wibo32 wibo64          build both
-#   make DEBUG=1 wibo64         build with -O0 -g3
-#   make test [TEST=name]       build the fixtures for the selected runtime and run them under wibo
-#   make WIN64=1 test           run the Win64 fixtures under ./wibo64
-#   make test-bundle            run the --bundle checks (builds the fixtures for the selected runtime)
+#   make                build ./wibo32 (PE32 guests) and, when CC targets x86_64, ./wibo64 (PE32+ guests)
+#   make wibo32         build ./wibo32 (PE32 guests)
+#   make wibo64         build ./wibo64 (PE32+ guests; needs an x86_64 CC)
+#   make DEBUG=1        build with -O0 -g3
+#   make test [TEST=wibo.<name>]   build the fixtures and run them under each runtime
+#   make test-bundle    run the --bundle checks under each runtime
 #
 # Bundles: `./wibo32 --bundle -o app app.exe lib.dll` writes a standalone executable (see README.md).
 #
 # Variables (command line or environment):
-#   DEBUG                  1 builds with -O0 -g3; 0 builds with -O3 -DNDEBUG (default 0)
-#   WIN64                  1 builds the Win64 runtime (needs an x86_64 CC): native 64-bit guest pointers,
-#                          no 32-bit trampolines or LDT setup (default 0)
-#   CC                     target C compiler (default gcc). CC selects the architecture: the Makefile detects
-#                          x86_64 or i686 from the compiler's predefined macros. A 32-bit build needs a 32-bit
-#                          compiler, e.g. make CC="gcc -m32" wibo32 (multilib) or a cross compiler. No -m32 is
+#   CC                     target C compiler (default gcc). Its predefined macros select the architecture
+#                          (__x86_64__ or __i386__) and the OS (__linux__ or __APPLE__). A 32-bit build needs a
+#                          32-bit compiler, e.g. make CC="gcc -m32" (multilib) or a cross compiler. No -m32 is
 #                          added implicitly. On x86_64 hosts the default wibo32 is a 64-bit binary that runs PE32
 #                          guests in-process.
+#   HOSTCC                 compiler for host tools such as gentramp (default: CC)
+#   DEBUG                  1 builds with -O0 -g3; 0 builds with -O3 -DNDEBUG (default 0)
 #   WIBO_VERSION           version string (default: git describe, else "unknown")
 #   WIBO_ENABLE_LIBURING   1 enables the io_uring backend on Linux (default 0)
 #   WIBO_LIBURING_STATIC   1 links liburing statically (default 0)
-#   WIBO_ENABLE_WINE_DLLS  0 disables downloading and embedding the Wine CRT DLLs
-#   MINGW_CC, MINGW_WINDRES  fixture toolchain (default i686-w64-mingw32-*, or x86_64-* when WIN64=1)
+#   WIBO_ENABLE_WINE_DLLS  1 embeds the Wine CRT DLLs other than msvcrt in wibo32 (default 0).
+#                          msvcrt itself is always the built-in dll/msvcrt.c.
+#   MINGW32_CC, MINGW32_WINDRES  fixture toolchain for wibo32 (default i686-w64-mingw32-gcc, -windres)
+#   MINGW64_CC, MINGW64_WINDRES  fixture toolchain for wibo64 (default x86_64-w64-mingw32-gcc, -windres)
 #   TEST_TIMEOUT           seconds allowed per fixture test (default 1500)
-#   CFLAGS, LDFLAGS        passed to the wibo compile and link steps (e.g. CFLAGS=-flto LDFLAGS=-flto)
+#   CFLAGS, LDFLAGS        passed to the wibo compile and link steps
 #   EXTRA_CFLAGS, EXTRA_LDFLAGS, EXTRA_LIBS  appended to the wibo build flags
+#
+# BUILD_VARIANT is internal: the top-level makefile sets it to re-invoke itself for each runtime.
 
 .DEFAULT_GOAL := all
 
 ifeq ($(origin CC),default)
 CC := gcc
 endif
-HOST_CC ?= cc
-
 DEBUG ?= 0
 ifneq ($(filter-out 0 1,$(DEBUG)),)
 $(error DEBUG must be 0 or 1, got '$(DEBUG)')
@@ -63,45 +62,41 @@ else
 $(error CC='$(CC)' targets neither Linux nor Darwin)
 endif
 
-WIN64 ?= 0
-ifneq ($(filter-out 0 1,$(WIN64)),)
-$(error WIN64 must be 0 or 1, got '$(WIN64)')
-endif
-ifeq ($(WIN64),1)
-ifneq ($(TARGET_ARCH),x86_64)
-$(error WIN64=1 needs an x86_64 C compiler, but CC='$(CC)' targets $(TARGET_ARCH))
-endif
-endif
-
 WIBO_ENABLE_LIBURING ?= 0
 WIBO_LIBURING_STATIC ?= 0
-WIBO_ENABLE_WINE_DLLS ?= 1
+WIBO_ENABLE_WINE_DLLS ?= 0
 TEST_TIMEOUT ?= 1500
-MINGW_ARCH := $(if $(filter 1,$(WIN64)),x86_64,i686)
-MINGW_CC ?= $(MINGW_ARCH)-w64-mingw32-gcc
-MINGW_WINDRES ?= $(MINGW_ARCH)-w64-mingw32-windres
-CLANG_FORMAT ?= clang-format
+HOSTCC ?= $(CC)
+MINGW32_CC ?= i686-w64-mingw32-gcc
+MINGW32_WINDRES ?= i686-w64-mingw32-windres
+MINGW64_CC ?= x86_64-w64-mingw32-gcc
+MINGW64_WINDRES ?= x86_64-w64-mingw32-windres
+
+# wibo64 is only a candidate when CC generates x86_64 code; wibo32 is always built.
+RUNTIMES := wibo32 $(if $(filter x86_64,$(TARGET_ARCH)),wibo64)
 
 BUILD_ROOT := build
-ifeq ($(WIN64),1)
-BUILD_DIR := $(BUILD_ROOT)/wibo64
-else ifeq ($(TARGET_ARCH),i686)
-BUILD_DIR := $(BUILD_ROOT)/wibo32
-else
-BUILD_DIR := $(BUILD_ROOT)/wibo32-$(TARGET_ARCH)
-endif
+BUILD_DIR := $(BUILD_ROOT)/$(BUILD_VARIANT)-$(TARGET_ARCH)
 OBJ_DIR := $(BUILD_DIR)/obj
 GEN_DIR := $(BUILD_DIR)/generated
 TEST_BIN_DIR := $(BUILD_DIR)/test
 VENDOR_DIR := $(BUILD_ROOT)/vendor
 VENDOR_ABS := $(abspath $(VENDOR_DIR))
-# The loader executable lives in the top-level directory; only its object files go under BUILD_DIR.
-WIBO_NAME := $(if $(filter 1,$(WIN64)),wibo64,wibo32)
+# The runtime executable lives in the top-level directory; only its object files go under BUILD_DIR.
+WIBO_NAME := $(BUILD_VARIANT)
 WIBO := $(CURDIR)/$(WIBO_NAME)
-TOOLS_DIR := $(BUILD_ROOT)/tools
+TOOLS_DIR := $(BUILD_DIR)/tools
 GENTRAMP := $(TOOLS_DIR)/gentramp
 
 GENTRAMP_ARCH := $(if $(filter x86_64,$(TARGET_ARCH)),x86_64,x86)
+
+ifneq ($(BUILD_VARIANT),)
+ifeq ($(filter $(BUILD_VARIANT),$(RUNTIMES)),)
+$(error runtime '$(BUILD_VARIANT)' cannot be built with CC='$(CC)' (targets $(TARGET_ARCH)))
+endif
+GUEST64 := $(if $(filter wibo64,$(BUILD_VARIANT)),1,0)
+MINGW_CC := $(if $(filter 1,$(GUEST64)),$(MINGW64_CC),$(MINGW32_CC))
+MINGW_WINDRES := $(if $(filter 1,$(GUEST64)),$(MINGW64_WINDRES),$(MINGW32_WINDRES))
 
 ifeq ($(DEBUG),1)
 OPT_FLAGS := -O0 -g3
@@ -121,7 +116,7 @@ PLATFORM_LDFLAGS := -Wl,-no_pie,-no_fixup_chains -Wl,-segalign,0x1000 -Wl,-pagez
 	-Wl,-image_base,0x7E001000 -Wl,-segaddr,RESV32,0x1000 -Wl,-segprot,RESV32,-,-
 PLATFORM_LIBS :=
 else
-PLATFORM_SRCS := src/async_io_epoll.c src/processes_linux.c $(if $(filter 1,$(WIN64)),src/setup_linux64.c,src/setup_linux.c)
+PLATFORM_SRCS := src/async_io_epoll.c src/processes_linux.c $(if $(filter 1,$(GUEST64)),src/setup_linux64.c,src/setup_linux.c)
 # GNU ld on ELF rejects --image-base; -Ttext-segment places the image at the same address.
 PLATFORM_LDFLAGS := -no-pie -Wl,-Ttext-segment=0x70000000
 PLATFORM_LIBS := -latomic
@@ -198,11 +193,10 @@ DLL_SRCS := \
 	dll/version.c \
 	dll/ws2.c
 
-WINE_DLLS := crtdll msvcrt msvcirt msvcrt20 msvcrt40 msvcr71 msvcr90 msvcr100 msvcr120 ucrtbase
+WINE_DLLS := crtdll msvcirt msvcrt20 msvcrt40 msvcr71 msvcr90 msvcr100 msvcr120 ucrtbase
 WINEDLL_RELEASE_TAG := 2026-09-29
 WINEDLL_URL := https://github.com/encounter/winedll/releases/download/$(WINEDLL_RELEASE_TAG)
 SHA256_crtdll := 3caf465b10ae4cb2127bc535e91a39c644b605253130d523fbf122760f422c0b
-SHA256_msvcrt := 9dea2e3c73dc071430772aae0417534fd76c7be082939d9623be5432227605e3
 SHA256_msvcirt := 2086a637fb2aecb754510761f0dd04b79694e10526c4f8964e262c8cccca9db4
 SHA256_msvcrt20 := f603f5e4c20e54f2475c940199064f2f81fac5f3ae5e1b7a73bd130691a1e78c
 SHA256_msvcrt40 := d37ea23b4c36b2377817617d2a93fb53bd3bfde40a5c0ecec502b623439fe50e
@@ -212,13 +206,15 @@ SHA256_msvcr100 := 624d89f0cfb67d9153582910e81d3748971959a16d3872e4503afd7708912
 SHA256_msvcr120 := f1dd6500a7aa4cf58c3c17f3d3b091f00138f7b465c363efef4bf20119a1bcaf
 SHA256_ucrtbase := 1d5e5bbf3a766e031d7d208659c097c944985cbcbc2725d3f926f220d6e22c16
 
-ifeq ($(WIN64),1)
-# Win64 guests use the native msvcrt subset in dll/msvcrt64.c; the PE32 Wine CRT DLLs would fail the bitness guard.
-EMBEDDED_WINE_DLLS :=
+# msvcrt is always the built-in subset (dll/msvcrt.c) for both runtimes. The other Wine CRT DLLs are embedded
+# only in wibo32 with WIBO_ENABLE_WINE_DLLS=1; wibo64 skips them because the PE32 builds fail its bitness guard.
 NATIVE_CRT_DLLS := msvcrt
+ifeq ($(GUEST64),1)
+EMBEDDED_WINE_DLLS :=
 else ifeq ($(WIBO_ENABLE_WINE_DLLS),1)
 EMBEDDED_WINE_DLLS := $(WINE_DLLS)
-NATIVE_CRT_DLLS :=
+else
+EMBEDDED_WINE_DLLS :=
 endif
 EMBED_DLL_SRCS := $(addprefix dll/,$(addsuffix .c,$(EMBEDDED_WINE_DLLS)))
 
@@ -227,18 +223,14 @@ WINE_DLL_FLAG_NAMES := crtdll:CRTDLL msvcrt:MSVCRT msvcirt:MSVCIRT msvcrt20:MSVC
 	msvcrt40:MSVCRT40 msvcr71:MSVCR71 msvcr90:MSVCR90 msvcr100:MSVCR100 msvcr120:MSVCR120 \
 	ucrtbase:UCRTBASE
 WINE_DLL_DEFS := $(foreach p,$(WINE_DLL_FLAG_NAMES),-DWIBO_HAS_$(word 2,$(subst :, ,$(p)))=$(if $(filter $(word 1,$(subst :, ,$(p))),$(EMBEDDED_WINE_DLLS) $(NATIVE_CRT_DLLS)),1,0))
-ifeq ($(WIN64),1)
-DLL_SRCS += dll/msvcrt64.c
-endif
+DLL_SRCS += dll/msvcrt.c
 
 ALL_TRAMP_MODULES := advapi32 bcrypt dbghelp entry mscoree version rpcrt4 shlwapi ws2 vcruntime lmgr \
 	ole32 oleaut32 user32 ntdll kernel32
-ifeq ($(WIN64),1)
 ALL_TRAMP_MODULES += msvcrt
-endif
-# One thunk set per build: the Win64 runtime generates Win64-ABI thunks, every other build generates the guest-ABI set.
+# One thunk set per build: wibo64 generates Win64-ABI thunks, wibo32 generates the guest-ABI set.
 TRAMP_MODULES := $(ALL_TRAMP_MODULES)
-ifeq ($(WIN64),1)
+ifeq ($(GUEST64),1)
 TRAMP_ARCH_ARGS := --arch x86_64 --guest-abi win64
 else
 TRAMP_ARCH_ARGS := --arch $(GENTRAMP_ARCH)
@@ -267,7 +259,7 @@ define TRAMPOLINE_RULE
 $$(GEN_DIR)/$(1)_trampolines.stamp: $$(GENTRAMP) $$(TRAMP_HDRS_$(1)) | $$(GEN_DIR)
 	$$(GENTRAMP) --dll $(1) --headers $$(TRAMP_HDRS_$(1)) $$(TRAMP_ARCH_ARGS) \
 		--out-asm $$(GEN_DIR)/$(1)_trampolines.S --out-hdr $$(GEN_DIR)/$(1)_trampolines.h \
-		-I . -I dll -I src -D WIBO_CODEGEN=1 --cc "$$(CC) $$(WIN64_DEFS)"
+		-I . -I dll -I src -D WIBO_CODEGEN=1 --cc "$$(CC) $$(GUEST64_DEFS)"
 	@touch $$@
 endef
 $(foreach m,$(TRAMP_MODULES),$(eval $(call TRAMPOLINE_RULE,$(m))))
@@ -279,10 +271,10 @@ WIBO_OBJS := $(addprefix $(OBJ_DIR)/,$(addsuffix .o,$(WIBO_SRCS))) $(TRAMP_OBJS)
 WIBO_DEPS := $(WIBO_OBJS:.o=.d)
 
 # -std is C-only; the assembler sources reuse the same flags without it.
-WIN64_DEFS := $(if $(filter 1,$(WIN64)),-DWIBO_GUEST64=1)
+GUEST64_DEFS := $(if $(filter 1,$(GUEST64)),-DWIBO_GUEST64=1)
 # User CFLAGS follow OPT_FLAGS so they can override the optimization level.
 WIBO_COMMON_FLAGS := -Wall -Wextra $(OPT_FLAGS) $(CFLAGS) \
-	$(GNU_ONLY_FLAGS) $(WINE_DLL_DEFS) $(GETTID_DEFS) $(WIN64_DEFS) -DWIBO_ENABLE_LIBURING=$(ENABLE_URING) \
+	$(GNU_ONLY_FLAGS) $(WINE_DLL_DEFS) $(GETTID_DEFS) $(GUEST64_DEFS) -DWIBO_ENABLE_LIBURING=$(ENABLE_URING) \
 	-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_TIME_BITS=64 \
 	-I dll -I src -I $(GEN_DIR) -MMD -MP $(EXTRA_CFLAGS)
 WIBO_CFLAGS := $(WIBO_COMMON_FLAGS)
@@ -314,20 +306,7 @@ ifeq ($(TARGET_OS),Darwin)
 $(OBJ_DIR)/src/setup_darwin.c.o: OBJ_CFLAGS += -fms-extensions
 endif
 
-.PHONY: all clean distclean fixtures test test-bundle check-mingw gentramp format check-format list-tests print-wibo FORCE
-
-all: $(WIBO)
-
-# The executables are named after their targets. Each is built by a sub-make because the object directory
-# depends on WIN64 (set at parse time); FORCE lets the sub-make decide what is stale.
-wibo32: FORCE
-	@$(MAKE) --no-print-directory WIN64=0 $(CURDIR)/wibo32
-
-wibo64: FORCE
-	@$(MAKE) --no-print-directory WIN64=1 $(CURDIR)/wibo64
-
-print-wibo:
-	@echo $(WIBO)
+.PHONY: check-mingw gentramp fixtures test test-bundle list-tests FORCE
 
 $(WIBO): $(WIBO_OBJS) $(LINK_STAMP) | $(BUILD_DIR)
 	$(CC) $(WIBO_LDFLAGS) -o $@ $(WIBO_OBJS) $(WIBO_LIBS)
@@ -352,7 +331,7 @@ $(GEN_DIR)/version_info.h: src/version_info.h.in FORCE | $(GEN_DIR)
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
 $(GENTRAMP): tools/gentramp.c | $(TOOLS_DIR)
-	$(HOST_CC) -std=gnu11 -O2 -Wall -Wextra -o $@ $<
+	$(HOSTCC) -std=gnu11 -O2 -Wall -Wextra -o $@ $<
 
 gentramp: $(GENTRAMP)
 
@@ -449,23 +428,53 @@ test-bundle: $(WIBO) $(FIXTURE_OUTS) $(FIXTURE_DLL_OUTS)
 list-tests:
 	@for t in $(FIXTURE_NAMES); do echo wibo.$$t; done
 
-FORMAT_SRCS := $(shell find src dll test tools -type f \( -name '*.c' -o -name '*.h' \) 2>/dev/null)
-
-format:
-	$(CLANG_FORMAT) -i $(FORMAT_SRCS)
-
-check-format:
-	$(CLANG_FORMAT) --dry-run --Werror $(FORMAT_SRCS)
-
 $(BUILD_DIR) $(GEN_DIR) $(TEST_BIN_DIR) $(TOOLS_DIR) $(VENDOR_DIR):
 	@mkdir -p $@
 
+FORCE:
+
+-include $(WIBO_DEPS)
+
+endif
+
+# Top level: each runtime is built and tested by a sub-make with BUILD_VARIANT set.
+ifeq ($(BUILD_VARIANT),)
+.DEFAULT_GOAL := all
+.PHONY: all $(RUNTIMES) test test-bundle fixtures list-tests print-wibo clean distclean FORCE
+
+all: $(RUNTIMES)
+
+$(RUNTIMES): FORCE
+	@$(MAKE) --no-print-directory BUILD_VARIANT=$@ $(CURDIR)/$@
+
+ifeq ($(filter wibo64,$(RUNTIMES)),)
+wibo64:
+	@echo "error: wibo64 needs a C compiler that targets x86_64 (CC='$(CC)' targets $(TARGET_ARCH))" >&2; exit 1
+endif
+
+test: $(addsuffix .test,$(RUNTIMES))
+%.test: FORCE
+	@$(MAKE) --no-print-directory BUILD_VARIANT=$* test
+
+test-bundle: $(addsuffix .test-bundle,$(RUNTIMES))
+%.test-bundle: FORCE
+	@$(MAKE) --no-print-directory BUILD_VARIANT=$* test-bundle
+
+fixtures: $(addsuffix .fixtures,$(RUNTIMES))
+%.fixtures: FORCE
+	@$(MAKE) --no-print-directory BUILD_VARIANT=$* fixtures
+
+list-tests:
+	@$(MAKE) --no-print-directory BUILD_VARIANT=$(firstword $(RUNTIMES)) $@
+
+print-wibo:
+	@for r in $(RUNTIMES); do echo $(CURDIR)/$$r; done
+
 clean:
-	rm -rf $(BUILD_DIR) wibo32 wibo64
+	rm -rf $(BUILD_ROOT)/wibo32-* $(BUILD_ROOT)/wibo64-* wibo32 wibo64
 
 distclean:
 	rm -rf $(BUILD_ROOT) wibo32 wibo64
 
 FORCE:
-
--include $(WIBO_DEPS)
+endif

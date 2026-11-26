@@ -10,12 +10,13 @@ build from source.
 
 [releases]: https://github.com/decompals/wibo/releases
 
-Release builds:
+Release builds (each runtime is a separate file in the artifact):
 
-- `wibo-i686`: Linux, 32-bit ELF; runs PE32 programs (static binary)
-- `wibo-x86_64`: Linux, 64-bit ELF; runs PE32 programs (static
-  binary, experimental)
-- `wibo-win64`: Linux, 64-bit ELF; runs PE32+ programs
+- `wibo-i686-wibo32`: Linux, 32-bit ELF; runs PE32 programs (static
+  binary)
+- `wibo-x86_64-wibo32`: Linux, 64-bit ELF; runs PE32 programs
+  (static binary, experimental)
+- `wibo-x86_64-wibo64`: Linux, 64-bit ELF; runs PE32+ programs
 - `wibo-macos`: macOS x86_64; experimental, Rosetta 2 supported
 
 ## Building
@@ -27,43 +28,45 @@ multilib or a 32-bit cross compiler (see below).
 make
 ```
 
-This produces `./wibo32`. On x86_64 hosts it is a 64-bit executable
-that runs PE32 (i386) guests by switching between 32-bit and 64-bit
-mode, so it needs no multilib. Use `make DEBUG=1` for a debug build
+This produces `./wibo32`. When `CC` targets x86_64 it also produces
+`./wibo64`. `./wibo32` is a 64-bit executable on x86_64 hosts that
+runs PE32 (i386) guests by switching between 32-bit and 64-bit mode,
+so it needs no multilib. Use `make DEBUG=1` for a debug build
 (`-O0 -g3`) in the same location.
 
 Targets:
 
 - `make wibo32`: PE32 loader (`./wibo32`)
-- `make wibo64`: PE32+ loader (`./wibo64`)
-- `make wibo32 wibo64`: both
-- `make`: `wibo32`, or `wibo64` when `WIN64=1` is set
+- `make wibo64`: PE32+ loader (`./wibo64`); needs an x86_64 `CC`
+- `make`: `wibo32`, plus `wibo64` when `CC` targets x86_64
 
 Executables are written to the top-level directory. Object files are
-kept apart in `build/wibo32/obj` and `build/wibo64/obj`, because the
-preprocessor configuration differs.
+kept apart in `build/<variant>-<arch>/obj`, because the preprocessor
+configuration differs.
 
 Build variables (pass on the command line, for example
 `make DEBUG=1 wibo64`):
 
 - `DEBUG` (default `0`): `1` builds with `-O0 -g3`; `0` builds with
   `-O3 -DNDEBUG`.
-- `WIN64` (default `0`): `1` selects the 64-bit loader (`wibo64`).
-  `make` and `make test` use it.
 - `CC` (default `gcc`): the target C compiler. Its predefined macros
   select the architecture and OS (see below). Pass flags with it if
   needed, for example `CC="gcc -m32"`. The build stops if the target
   is neither x86_64 nor i386.
+- `HOSTCC` (default `$(CC)`): compiler for host tools such as
+  `gentramp`, which run on the build machine.
 - `CFLAGS`, `LDFLAGS`: passed to the wibo compile and link steps, for
   example `make CFLAGS=-flto LDFLAGS=-flto`. Host tools such as
   `gentramp` are not affected.
 - `WIBO_ENABLE_LIBURING` (default `0`): `1` enables the io_uring
   backend and links the system `liburing`.
-- `WIBO_ENABLE_WINE_DLLS` (default `1`): `0` skips downloading and
-  embedding the Wine CRT DLLs (see [License](#license)).
-- `MINGW_CC`, `MINGW_WINDRES`: MinGW tools that build the test
-  fixtures. They default to `i686-w64-mingw32-*`, or to
-  `x86_64-w64-mingw32-*` when `WIN64=1`.
+- `WIBO_ENABLE_WINE_DLLS` (default `0`): `1` embeds the Wine CRT DLLs
+  other than msvcrt in `wibo32` (see [License](#license)). msvcrt is
+  always built in.
+- `MINGW32_CC`, `MINGW32_WINDRES`: MinGW tools that build the `wibo32`
+  test fixtures (default `i686-w64-mingw32-*`).
+- `MINGW64_CC`, `MINGW64_WINDRES`: MinGW tools that build the `wibo64`
+  test fixtures (default `x86_64-w64-mingw32-*`).
 - `EXTRA_CFLAGS`, `EXTRA_LDFLAGS`, `EXTRA_LIBS`: appended to the
   compile, link, and library steps.
 
@@ -78,22 +81,24 @@ cannot disagree.
 
 - A native 32-bit ELF that runs PE32 guests needs a 32-bit compiler:
   `CC="gcc -m32"` with multilib, or a cross compiler such as
-  `i686-linux-gnu-gcc`. No `-m32` is added implicitly.
-- `WIN64=1` requires an x86_64 `CC`.
+  `i686-linux-gnu-gcc`. No `-m32` is added implicitly. Use
+  `HOSTCC` as well if the host compiler cannot build 32-bit tools.
+- `wibo64` is built only when `CC` targets x86_64, so `make` with an
+  i386 `CC` produces `wibo32` alone.
 
 Available configurations:
 
-- `make wibo32`: PE32 loader. On an x86_64 host this is a 64-bit ELF.
-- `make DEBUG=1 wibo32`: PE32 loader, debug build.
-- `make CC="gcc -m32" wibo32`: native 32-bit ELF that runs PE32
-  guests.
+- `make`: `wibo32`, plus `wibo64` if `CC` targets x86_64. On an
+  x86_64 host `wibo32` is a 64-bit ELF.
+- `make DEBUG=1`: the same, as debug builds.
+- `make CC="gcc -m32"`: `wibo32` as a native 32-bit ELF that runs
+  PE32 guests.
 - `make wibo64`: PE32+ loader.
-- `make DEBUG=1 wibo64`: PE32+ loader, debug build.
 - macOS: `make` builds an x86_64 binary with `gcc` (Apple clang). On
   Apple silicon, use `make CC="gcc -arch x86_64"`.
 
-`make print-wibo` prints the output path for the current
-configuration.
+`make print-wibo` prints the output path of each runtime built for
+the current configuration.
 
 
 ## Usage
@@ -158,9 +163,9 @@ It serves the bundled DLLs, and any children it spawns, from memory.
 - The first file is the program that runs. The others are found by
   basename, case-insensitively. Names must be unique under that
   comparison.
-- Each file must match the build that packs it: PE32 for a default
-  build, PE32+ for `WIN64=1`. The packer rejects anything else,
-  including a mix of the two.
+- Each file must match the build that packs it: PE32 for `wibo32`,
+  PE32+ for `wibo64`. The packer rejects anything else, including a
+  mix of the two.
 - Packing uses the wibo binary that runs `--bundle`, so the bundle
   inherits that build's architecture. The binary is located through
   `argv[0]`, searched in `PATH` for a bare name, not through
@@ -169,9 +174,9 @@ It serves the bundled DLLs, and any children it spawns, from memory.
   `--cmdline`, `--`) do not apply, and `--bundle` is passed to the
   program. `WIBO_DEBUG` still works.
 - `wibo --bundle --help` prints the usage.
-- `make test-bundle` (or `make WIN64=1 test-bundle`) checks a bundle
-  with a DLL, a bundle without DLLs, argument pass-through, and the
-  packer's name and architecture rules. To run an i386 build on a
+- `make test-bundle` checks a bundle with a DLL, a bundle without
+  DLLs, argument pass-through, and the packer's name and architecture
+  rules. It runs for every runtime built. To run an i386 build on a
   64-bit host, set `BUNDLE_RUNNER=qemu-i386`.
 
 ## Known limitations
@@ -200,10 +205,9 @@ It serves the bundled DLLs, and any children it spawns, from memory.
 
 ## Tests
 
-Self-checking Windows fixtures are built with a MinGW cross
-toolchain. By default that is `i686-w64-mingw32-gcc` and
-`i686-w64-mingw32-windres`. With `WIN64=1` it is the
-`x86_64-w64-mingw32` tools.
+Self-checking Windows fixtures are built with MinGW cross toolchains:
+`i686-w64-mingw32-*` for `wibo32` and `x86_64-w64-mingw32-*` for
+`wibo64`. Override them with `MINGW32_*` and `MINGW64_*`.
 
 On macOS, use `brew install mingw-w64`.
 
@@ -211,8 +215,8 @@ On macOS, use `brew install mingw-w64`.
 make test
 ```
 
-This cross-compiles the fixture executables, runs them through
-`wibo`, and fails if any WinAPI expectation is not met. To run one
+This cross-compiles the fixture executables, runs them through each
+runtime, and fails if any WinAPI expectation is not met. To run one
 fixture, use `make test TEST=wibo.<name>`. `make list-tests` lists all
 fixture names.
 
@@ -229,9 +233,10 @@ fixture names.
 wibo is licensed under the MIT License. See [`LICENSE`](LICENSE) for
 details.
 
-Optionally, wibo embeds custom Wine CRT DLL builds from
-[winedll][winedll]. Set `WIBO_ENABLE_WINE_DLLS=0` to skip them, for
-example `make WIBO_ENABLE_WINE_DLLS=0`.
+Optionally, `WIBO_ENABLE_WINE_DLLS=1` embeds custom Wine CRT DLL
+builds from [winedll][winedll] in `wibo32`. It is off by default.
+msvcrt is always the built-in implementation, so it is not taken from
+Wine.
 
 Wine is licensed under the LGPLv2.1+. See the `LICENSE` and
 `COPYING.LIB` files in [winedll][winedll] for details.

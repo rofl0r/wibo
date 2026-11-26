@@ -7,9 +7,12 @@ typedef void(_CC_CDECL *MSVCRT_PVFV)(void);
 typedef int(_CC_CDECL *MSVCRT_COMPARE_FN)(const void *, const void *);
 typedef void(_CC_CDECL *MSVCRT_SIGHANDLER)(int);
 
-// Win64 msvcrt subset. Export names are these identifiers with the "msvcrt_" prefix stripped.
-// FILE* arguments are pointers into the MS-layout iob array returned by __iob_func.
-// Variadic arguments are forwarded as raw 64-bit slots; floating-point values are read from them as raw bits.
+// Msvcrt subset shared by wibo64 (PE32+ guests) and wibo32 (PE32 guests).
+// Export names are these identifiers with the "msvcrt_" prefix stripped. FILE*
+// arguments are pointers into the MS-layout iob array returned by __iob_func.
+// Guest pointers and slots are GUEST_PTR wide (8 bytes on wibo64, 4 bytes on
+// wibo32). Variadic arguments are read from one slot per guest argument;
+// floating-point values are read from them as raw bits.
 void *CDECL msvcrt_malloc(SIZE_T size);
 void *CDECL msvcrt_calloc(SIZE_T count, SIZE_T size);
 void CDECL msvcrt_free(void *ptr);
@@ -34,6 +37,8 @@ int CDECL msvcrt_wcsncmp(LPCWSTR a, LPCWSTR b, SIZE_T count);
 LPWSTR CDECL msvcrt_wcsrchr(LPCWSTR str, WCHAR ch);
 
 void *CDECL msvcrt___iob_func(void);
+int *CDECL msvcrt___p__commode(void);
+int *CDECL msvcrt___p__fmode(void);
 int CDECL msvcrt_fprintf(void *stream, LPCSTR format, ...);
 int CDECL msvcrt_vfprintf(void *stream, LPCSTR format, void *ap);
 int CDECL msvcrt_printf(LPCSTR format, ...);
@@ -47,8 +52,8 @@ void CDECL msvcrt__amsg_exit(int code);
 void CDECL msvcrt_abort(void);
 void *CDECL msvcrt__onexit(MSVCRT_PVFV fn);
 int CDECL msvcrt_atexit(MSVCRT_PVFV fn);
-void CDECL msvcrt__initterm(MSVCRT_PVFV *begin, MSVCRT_PVFV *end);
-int CDECL msvcrt___getmainargs(int *argc, char ***argv, char ***envp, int doWildCard, void *startInfo);
+void CDECL msvcrt__initterm(GUEST_PTR *begin, GUEST_PTR *end);
+int CDECL msvcrt___getmainargs(int *argc, GUEST_PTR *argv, GUEST_PTR *envp, int doWildCard, void *startInfo);
 void CDECL msvcrt___set_app_type(int type);
 void CDECL msvcrt__lock(int locknum);
 void CDECL msvcrt__unlock(int locknum);
