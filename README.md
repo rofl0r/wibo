@@ -202,6 +202,20 @@ It serves the bundled DLLs, and any children it spawns, from memory.
 - The 32-bit build's crash report has not been verified on native i386
   hardware. Under `qemu-i386`, the handler faulted on a `%gs` TLS
   read, so the report is not produced there.
+- The 32-bit guest's `errno` lives in a per-thread cell. The cell is
+  not freed when its thread exits.
+- Native i686 builds (`CC="gcc -m32"`) do not sync `errno` at shim
+  boundaries. Only the x86_64-hosted 32-bit loader has the hook, and
+  native 32-bit binaries cannot run in the development sandbox.
+- The `setlocale` result for 32-bit guests comes from one shared slot.
+  A call from another thread can replace it, so an older pointer may
+  dangle.
+- `_putenv_s` rejects a name that contains `=` with `EINVAL`. Windows
+  accepts it.
+- The wide environment functions (`_wgetenv`, `_wputenv`,
+  `_wputenv_s`, `_wgetenv_s`) are not exported.
+- `_isatty` is not exported. msvcrt has no file descriptor table to
+  map descriptors onto host descriptors.
 
 ## Tests
 
