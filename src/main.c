@@ -53,6 +53,7 @@ TEB *wibo_allocateTib(void) {
 	}
 	memset(newTib, 0, sizeof(TEB));
 	wibo_tls_initializeTib(newTib);
+	newTib->Tib.ExceptionList = (GUEST_PTR)-1;
 	newTib->Tib.Self = toGuestPtr(newTib);
 	newTib->Peb = toGuestPtr(wibo_processPeb);
 	return newTib;
@@ -413,6 +414,7 @@ int main(int argc, char **argv) {
 	TEB *tib = wibo_heap_guestMalloc(sizeof(TEB));
 	memset(tib, 0, sizeof(TEB));
 	wibo_tls_initializeTib(tib);
+	tib->Tib.ExceptionList = (GUEST_PTR)-1;
 	tib->Tib.Self = toGuestPtr(tib);
 	tib->Peb = toGuestPtr(peb);
 	wibo_processPeb = peb;
