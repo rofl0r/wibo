@@ -17,6 +17,10 @@
  * <export>, while the host call uses the C identifier. So ws2_select is exported as "select"
  * via thunk_ws2_select, and entry_stubBase is exported as "stubBase" via thunk_entry_stubBase.
  * Identifiers without the prefix are exported unchanged. Typedef names are not remapped.
+ *
+ * --guest-abi win64 (x86_64 only) instead emits ms_abi guest -> SysV host thunks named
+ * thunk_win64_<dll>_<export>, plus <dll>Win64ThunkByName. Win64 guests run native 64-bit code,
+ * so no mode or segment switching is needed. Host-to-guest typedefs are not generated in this mode.
  */
 
 #include <ctype.h>
@@ -34,6 +38,7 @@ typedef enum { ARCH_X86, ARCH_X86_64 } Arch;
 typedef enum { CC_DEFAULT, CC_C, CC_STDCALL, CC_FASTCALL } CallConv;
 
 static Arch g_arch;
+static int g_win64;
 static const char *g_dll;
 static int g_darwin;
 static long g_ptrSize;
@@ -1626,12 +1631,88 @@ static void emitThunk(Buf *o, const Sig *f, int h2g) {
         emitThunk32(o, f, h2g);
 }
 
+/*
+ * Win64 guest -> SysV host. The guest's rcx/rdx/r8/r9 are first spilled to their home slots, which
+ * are the caller's shadow space above the return address. That makes the register shuffle order-free.
+ * rdi/rsi and xmm6-15 are callee-saved on Win64 but caller-saved on SysV, so they are preserved here.
+ */
+static int isFloatTy(const Ty *t) {
+    return t->kind == TY_FLOAT || t->kind == TY_DOUBLE || t->kind == TY_LDOUBLE;
+}
+
+static void emitThunkWin64(Buf *o, const Sig *f) {
+    static const char *const kWin64Regs[] = {"rcx", "rdx", "r8", "r9"};
+    const long kHomeOff = 16;  /* [rbp+16] is the first shadow slot: rbp = entry rsp - 8 */
+    const long kStackOff = 48; /* [rbp+48] is the 5th argument */
+    const int kXmmSaved = 10;  /* xmm6..xmm15 */
+
+    for (int i = 0; i < f->nargs; i++) {
+        if (isFloatTy(f->args[i]))
+            fatal("floating-point argument %d of %s is not supported by Win64 thunks", i, f->name);
+        if (typeSize(f->args[i]) > 8)
+            fatal("argument %d of %s is larger than 8 bytes", i, f->name);
+    }
+    if (f->ret->kind != TY_VOID && typeSize(f->ret) > 8)
+        fatal("return size %ld not supported for %s", typeSize(f->ret), f->name);
+
+    Layout tgt = computeLayout(f->args, f->nargs, CC_C, ARCH_X86_64, 0, 0);
+    long stackArgs = (tgt.stackSize + 15) & ~15L;
+    long frame = stackArgs + kXmmSaved * 16;
+
+    bline(o, "\tpush rbp");
+    bline(o, "\tmov rbp, rsp");
+    bline(o, "\tpush rdi");
+    bline(o, "\tpush rsi");
+    bline(o, "\tsub rsp, %ld", frame);
+    for (int k = 0; k < kXmmSaved; k++)
+        bline(o, "\tmovups xmmword ptr [rsp+%ld], xmm%d", stackArgs + 16L * k, 6 + k);
+    for (int i = 0; i < f->nargs && i < 4; i++)
+        bline(o, "\tmov qword ptr [rbp+%ld], %s", kHomeOff + 8L * i, kWin64Regs[i]);
+
+    for (int i = 0; i < f->nargs; i++) {
+        long srcOff = i < 4 ? kHomeOff + 8L * i : kStackOff + 8L * (i - 4);
+        const Place *t = &tgt.places[i];
+        if (t->onStack) {
+            bline(o, "\tmov rax, qword ptr [rbp+%ld]", srcOff);
+            bline(o, "\tmov qword ptr [rsp+%ld], rax", t->stackOff);
+        } else {
+            bline(o, "\tmov %s, qword ptr [rbp+%ld]", t->reg, srcOff);
+        }
+    }
+
+    /* SysV variadic callees read al as the vector-register count; no floats are passed, so it is 0. */
+    bline(o, "\txor eax, eax");
+    bline(o, "\tcall %s", f->name);
+    if (f->ret->kind != TY_VOID && typeSize(f->ret) == 4 && signExtended(f->ret))
+        bline(o, "\tmovsxd rax, eax");
+
+    for (int k = 0; k < kXmmSaved; k++)
+        bline(o, "\tmovups xmm%d, xmmword ptr [rsp+%ld]", 6 + k, stackArgs + 16L * k);
+    bline(o, "\tadd rsp, %ld", frame);
+    bline(o, "\tpop rsi");
+    bline(o, "\tpop rdi");
+    bline(o, "\tpop rbp");
+    bline(o, "\tret");
+}
+
 /* ---------- Output ---------- */
 
 static void emitAsm(Buf *o, const Sig *funcs, size_t nf, const Sig *tds, size_t nt) {
     bline(o, "# Auto-generated thunks; DO NOT EDIT.");
     bline(o, "#include \"macros.S\"");
     bline(o, ".text");
+
+    if (g_win64) {
+        for (size_t i = 0; i < nf; i++) {
+            const Sig *f = &funcs[i];
+            bline(o, "%s", "");
+            bline(o, "# %s (win64 guest -> sysv host)", f->name);
+            bline(o, "ASM_GLOBAL(thunk_win64_%s_%s, @function)", g_dll, f->xname);
+            emitThunkWin64(o, f);
+            bline(o, "ASM_END(thunk_win64_%s_%s)", g_dll, f->xname);
+        }
+        return;
+    }
 
     for (size_t i = 0; i < nf; i++) {
         const Sig *f = &funcs[i];
@@ -1660,7 +1741,45 @@ static void emitAsm(Buf *o, const Sig *funcs, size_t nf, const Sig *tds, size_t 
     }
 }
 
+static void emitHeaderWin64(Buf *o, const Sig *funcs, size_t nf, const Var *vars, size_t nv) {
+    char guard[128];
+    size_t gi = 0;
+    for (const char *p = g_dll; *p && gi + 1 < sizeof guard - 20; p++)
+        guard[gi++] = (char)toupper((unsigned char)*p);
+    guard[gi] = '\0';
+    char fullGuard[160];
+    snprintf(fullGuard, sizeof fullGuard, "WIBO_GEN_%s_WIN64_THUNKS_H", guard);
+
+    bline(o, "/* Auto-generated; DO NOT EDIT. */");
+    bline(o, "#ifndef %s", fullGuard);
+    bline(o, "#define %s", fullGuard);
+    bline(o, "#include <stddef.h>");
+    bline(o, "#include <string.h>");
+    bline(o, "#ifdef __cplusplus");
+    bline(o, "extern \"C\" {");
+    bline(o, "#endif");
+    for (size_t i = 0; i < nf; i++)
+        bline(o, "extern void thunk_win64_%s_%s(void);", g_dll, funcs[i].xname);
+    bline(o, "#ifdef __cplusplus");
+    bline(o, "}");
+    bline(o, "#endif");
+    bline(o, "%s", "");
+    bline(o, "static inline void *%sWin64ThunkByName(const char *name) {", g_dll);
+    for (size_t i = 0; i < nf; i++)
+        bline(o, "\tif (strcmp(name, \"%s\") == 0) return (void*)&thunk_win64_%s_%s;", funcs[i].xname, g_dll,
+              funcs[i].xname);
+    for (size_t i = 0; i < nv; i++)
+        bline(o, "\tif (strcmp(name, \"%s\") == 0) return (void*)&%s;", vars[i].xname, vars[i].name);
+    bline(o, "\treturn NULL;");
+    bline(o, "}");
+    bline(o, "#endif /* %s */", fullGuard);
+}
+
 static void emitHeader(Buf *o, const Sig *funcs, size_t nf, const Sig *tds, size_t nt, const Var *vars, size_t nv) {
+    if (g_win64) {
+        emitHeaderWin64(o, funcs, nf, vars, nv);
+        return;
+    }
     char guard[128];
     size_t gi = 0;
     for (const char *p = g_dll; *p && gi + 1 < sizeof guard - 20; p++)
@@ -1922,7 +2041,7 @@ static long probeRecordSize(const char *spelling) {
 static void usage(FILE *f) {
     fprintf(f,
             "usage: gentramp --dll NAME --headers H... --arch x86|x86_64 --out-asm FILE --out-hdr FILE\n"
-            "                [-I DIR]... [-D MACRO]... [--cc COMPILER]\n");
+            "                [--guest-abi default|win64] [-I DIR]... [-D MACRO]... [--cc COMPILER]\n");
 }
 
 static void sortSigs(Sig *arr, size_t n) {
@@ -1968,6 +2087,12 @@ int main(int argc, char **argv) {
                 slPush(&headers, argv[++i]);
         } else if (!strcmp(a, "--arch") && i + 1 < argc) {
             archName = argv[++i];
+        } else if (!strcmp(a, "--guest-abi") && i + 1 < argc) {
+            const char *abi = argv[++i];
+            if (!strcmp(abi, "win64"))
+                g_win64 = 1;
+            else if (strcmp(abi, "default"))
+                fatal("unsupported guest ABI: %s", abi);
         } else if (!strcmp(a, "--out-asm") && i + 1 < argc) {
             outAsm = argv[++i];
         } else if (!strcmp(a, "--out-hdr") && i + 1 < argc) {
@@ -2007,6 +2132,8 @@ int main(int argc, char **argv) {
     } else {
         fatal("unsupported architecture: %s", archName);
     }
+    if (g_win64 && g_arch != ARCH_X86_64)
+        fatal("--guest-abi win64 requires --arch x86_64");
 #ifdef __APPLE__
     g_darwin = 1;
 #endif

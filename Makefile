@@ -229,8 +229,23 @@ $(foreach m,$(TRAMP_MODULES),$(eval $(call TRAMPOLINE_RULE,$(m))))
 
 TRAMP_OBJS := $(addprefix $(OBJ_DIR)/generated/,$(addsuffix _trampolines.S.o,$(TRAMP_MODULES)))
 
+# Win64 guests call the host with the Win64 ABI; thunks exist only for x86_64 hosts.
+ifeq ($(GENTRAMP_ARCH),x86_64)
+WIN64_TRAMP_MODULES := $(TRAMP_MODULES)
+endif
+define WIN64_TRAMPOLINE_RULE
+$$(GEN_DIR)/$(1)_win64_trampolines.stamp: $$(GENTRAMP) $$(TRAMP_HDRS_$(1)) | $$(GEN_DIR)
+	$$(GENTRAMP) --dll $(1) --headers $$(TRAMP_HDRS_$(1)) --arch x86_64 --guest-abi win64 \
+		--out-asm $$(GEN_DIR)/$(1)_win64_trampolines.S --out-hdr $$(GEN_DIR)/$(1)_win64_trampolines.h \
+		-I . -I dll -I src -D WIBO_CODEGEN=1 --cc "$$(CC_TARGET_CC)"
+	@touch $$@
+endef
+$(foreach m,$(WIN64_TRAMP_MODULES),$(eval $(call WIN64_TRAMPOLINE_RULE,$(m))))
+
+WIN64_TRAMP_OBJS := $(addprefix $(OBJ_DIR)/generated/,$(addsuffix _win64_trampolines.S.o,$(WIN64_TRAMP_MODULES)))
+
 WIBO_SRCS := $(CORE_SRCS) $(DLL_SRCS) $(EMBED_DLL_SRCS) $(PLATFORM_SRCS) $(URING_SRCS)
-WIBO_OBJS := $(addprefix $(OBJ_DIR)/,$(addsuffix .o,$(WIBO_SRCS))) $(TRAMP_OBJS)
+WIBO_OBJS := $(addprefix $(OBJ_DIR)/,$(addsuffix .o,$(WIBO_SRCS))) $(TRAMP_OBJS) $(WIN64_TRAMP_OBJS)
 WIBO_DEPS := $(WIBO_OBJS:.o=.d)
 
 # -std is C-only; the assembler sources reuse the same flags without it. LTO applies only to C compiles and links.
@@ -274,6 +289,10 @@ $(OBJ_DIR)/%.S.o: %.S
 $(TRAMP_OBJS): $(OBJ_DIR)/generated/%_trampolines.S.o: $(GEN_DIR)/%_trampolines.stamp
 	@mkdir -p $(@D)
 	$(CC) $(WIBO_COMMON_FLAGS) -c $(GEN_DIR)/$*_trampolines.S -o $@
+
+$(WIN64_TRAMP_OBJS): $(OBJ_DIR)/generated/%_win64_trampolines.S.o: $(GEN_DIR)/%_win64_trampolines.stamp
+	@mkdir -p $(@D)
+	$(CC) $(WIBO_COMMON_FLAGS) -c $(GEN_DIR)/$*_win64_trampolines.S -o $@
 
 $(GEN_DIR)/version_info.h: src/version_info.h.in FORCE | $(GEN_DIR)
 	sed -e 's|@WIBO_VERSION_STRING@|$(WIBO_VERSION)|' \
