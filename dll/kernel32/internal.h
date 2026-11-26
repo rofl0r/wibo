@@ -311,6 +311,8 @@ void kernel32_tryMarkExecutable(void *mem);
 DWORD kernel32_getLastError(void);
 void kernel32_setLastError(DWORD error);
 void kernel32_setLastErrorFromErrno(void);
+// Turns host faults in guest code into unhandled Windows exceptions. Call once, on the main thread.
+void kernel32_installFaultHandlers(void);
 
 _Noreturn static inline void kernel32_exitInternal(DWORD exitCode) {
 	DEBUG_LOG("exitInternal(%u)\n", exitCode);

@@ -529,6 +529,7 @@ int main(int argc, char **argv) {
 
 	// Reset last error
 	kernel32_setLastError(0);
+	kernel32_installFaultHandlers();
 
 	// Invoke the damn thing
 	call_EntryProc(entryPoint);

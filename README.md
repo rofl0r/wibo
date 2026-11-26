@@ -128,6 +128,15 @@ Notes:
 - A first argument of exactly `--bundle-child` is consumed as an internal marker.
 - `make test-bundle` (or `make WIN64=1 test-bundle`) checks a bundle with a DLL, a bundle without DLLs, and the architecture check. To run the 32-bit build on a 64-bit host, set `BUNDLE_RUNNER=qemu-i386`.
 
+## Known limitations
+
+- Structured exception handling is not emulated. `__try`/`__except` blocks in guest code are not honored, and Win64 `__C_specific_handler` does not run guest handlers. Win64 would need `.pdata`/`.xdata` unwinding and scope tables; Win32 would need the FS:[0] SEH chain.
+- An unhandled exception (a guest fault or `RaiseException`) calls the `SetUnhandledExceptionFilter` filter, prints `wibo: unhandled exception <code> at <address>` to stderr, and exits with the low byte of the code. The filter's return value is ignored. `AddVectoredExceptionHandler` handlers are not called, and `ContextRecord` is passed as NULL.
+- Host faults (SIGSEGV, SIGBUS, SIGILL, SIGFPE) are reported only on the main thread, which has an alternate signal stack. Other threads report on their own stack.
+- `UnhandledExceptionFilter` is still a stub.
+- Process exit codes are 8 bits wide on Linux. `GetExitCodeProcess` returns the low byte, so a process that dies from an access violation reports 5 where Windows and Wine report `0xC0000005`.
+- The 32-bit build's crash report has not been verified on native i386 hardware. Under `qemu-i386`, the handler faulted on a `%gs` TLS read, so the report is not produced there.
+
 ## Tests
 
 Self-checking Windows fixtures are built with a 32-bit MinGW cross toolchain (`i686-w64-mingw32-gcc` and `i686-w64-mingw32-windres`).
