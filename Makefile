@@ -356,6 +356,10 @@ FIXTURE_NAMES := test_external_dll test_dll_attach_failure test_thread_notificat
 	test_init_once_execute test_gettickcount64 test_slist_interlocked test_locale_ex \
 	test_sync_ex test_wait_on_address test_env_strings test_msvcrt_printf test_msvcrt_stdio \
 	test_unhandled_exception test_msvcrt_mem test_dbghelp test_msvcrt_errno_locale test_msvcrt_putenv test_msvcrt_getenv_s test_msvcrt_putenv_s test_msvcrt_strdup test_msvcrt_stricmp test_msvcrt_errno_shim test_msvcrt_strcase test_msvcrt_strtol test_msvcrt_memicmp test_msvcrt_itoa test_msvcrt_wcsdup test_msvcrt_getpid test_msvcrt_wgetenv_s test_msvcrt_wputenv_s test_msvcrt_wputenv test_msvcrt_wgetenv
+# SEH dispatch is only implemented in the i686 host build (dll/kernel32/errhandlingapi.c).
+ifeq ($(TARGET_ARCH),i686)
+FIXTURE_NAMES += test_seh
+endif
 FIXTURE_DLL_NAMES := external_exports dll_attach_failure thread_notifications tls_reloc
 
 TEST_LIBS_test_bcrypt := -lbcrypt
