@@ -2,59 +2,58 @@
 
 #include "kernel32/internal.h"
 
-#include <filesystem>
-#include <memory>
-#include <optional>
-#include <string>
-#include <vector>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdlib.h>
+#include <sys/types.h>
 
-using kernel32::ProcessObject;
+typedef struct ProcessManagerImpl ProcessManagerImpl;
 
-namespace wibo {
-
-namespace detail {
-
-class ProcessManagerImpl {
-  public:
-	virtual ~ProcessManagerImpl() = default;
-	virtual bool init() = 0;
-	virtual void shutdown() = 0;
-	virtual bool addProcess(Pin<ProcessObject> po) = 0;
-	[[nodiscard]] virtual bool running() const = 0;
+// Backends embed this as their first member `base` and receive it as `self`.
+struct ProcessManagerImpl {
+	bool (*init)(ProcessManagerImpl *self);
+	void (*shutdown)(ProcessManagerImpl *self);
+	// Takes ownership of one reference to po.
+	bool (*addProcess)(ProcessManagerImpl *self, ProcessObject *po);
+	bool (*running)(const ProcessManagerImpl *self);
+	void (*destroy)(ProcessManagerImpl *self);
 };
 
-struct SpawnProcessInfo {
-	pid_t pid = -1;
-	int pidfd = -1;
-};
+// pid must be set to -1 and pidfd to -1 before calling wibo_detail_spawnProcess.
+typedef struct {
+	pid_t pid;
+	int pidfd;
+} SpawnProcessInfo;
 
-std::unique_ptr<ProcessManagerImpl> createProcessManagerImpl();
-int spawnProcess(char *const argv[], char *const envp[], SpawnProcessInfo &info);
+// Returns an owned implementation; release it through its destroy callback.
+ProcessManagerImpl *wibo_detail_createProcessManagerImpl(void);
+int wibo_detail_spawnProcess(char *const argv[], char *const envp[], SpawnProcessInfo *info);
 
-} // namespace detail
+typedef struct {
+	ProcessManagerImpl *mImpl;
+} ProcessManager;
 
-class ProcessManager {
-  public:
-	ProcessManager();
-	~ProcessManager();
-	bool init();
-	void shutdown();
-	bool addProcess(Pin<ProcessObject> po);
-	[[nodiscard]] bool running() const;
+bool ProcessManager_init(ProcessManager *self);
+void ProcessManager_shutdown(ProcessManager *self);
+// Takes ownership of one reference to po.
+bool ProcessManager_addProcess(ProcessManager *self, ProcessObject *po);
+bool ProcessManager_running(const ProcessManager *self);
 
-  private:
-	std::unique_ptr<detail::ProcessManagerImpl> mImpl;
-};
+ProcessManager *wibo_processes(void);
 
-ProcessManager &processes();
+// Returns a malloc'd path, or NULL if the command cannot be resolved.
+char *wibo_resolveExecutable(const char *command, bool searchPath);
+// On success, *pinOut receives one owned reference to the new process object.
+int wibo_spawnWithCommandLine(const char *applicationName, const char *commandLine, ProcessObject **pinOut);
+int wibo_spawnWithArgv(const char *applicationName, const StringVec *argv, ProcessObject **pinOut);
+// Each string and the vector storage are malloc'd; release with StringVec_free.
+StringVec wibo_splitCommandLine(const char *commandLine);
 
-std::optional<std::filesystem::path> resolveExecutable(const std::string &command, bool searchPath);
-int spawnWithCommandLine(const std::string &applicationName, const std::string &commandLine,
-						 Pin<kernel32::ProcessObject> &pinOut);
-int spawnWithArgv(const std::string &applicationName, const std::vector<std::string> &argv,
-				  Pin<kernel32::ProcessObject> &pinOut);
-std::vector<std::string> splitCommandLine(const char *commandLine);
+static inline void StringVec_free(StringVec *v) {
+	for (size_t i = 0; i < v->len; i++) {
+		free(v->data[i]);
+	}
+	vec_free(v);
+}
 
-DWORD getThreadId();
-
-} // namespace wibo
+DWORD wibo_getThreadId(void);

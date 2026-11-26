@@ -71,9 +71,7 @@
 
 #define S_OK ((HRESULT)0x00000000)
 
-namespace wibo {
-DWORD winErrorFromErrno(int err);
-NTSTATUS statusFromWinError(DWORD error);
-NTSTATUS statusFromErrno(int err);
-DWORD winErrorFromNtStatus(NTSTATUS status);
-} // namespace wibo
+DWORD wibo_winErrorFromErrno(int err);
+NTSTATUS wibo_statusFromWinError(DWORD error);
+NTSTATUS wibo_statusFromErrno(int err);
+DWORD wibo_winErrorFromNtStatus(NTSTATUS status);

@@ -39,6 +39,9 @@
 #define SYMBOL_NAME(name) GLUE(__USER_LABEL_PREFIX__, name)
 
 #ifndef __ASSEMBLER__
+#include <stddef.h>
+#include <stdint.h>
+
 #define STR_(S) #S
 #define STR(S) STR_(S)
 #define SYMBOL_NAME_STR_(name) STR(__USER_LABEL_PREFIX__) #name
@@ -63,13 +66,8 @@
         ".incbin \"" file "\"\n"                                  \
         ".globl " SYMBOL_NAME_STR(GLUE(symbol, End)) "\n"         \
         SYMBOL_NAME_STR(GLUE(symbol, End)) ":\n");                \
-    extern "C" {                                                  \
-        extern const uint8_t symbol[];                            \
-        extern const uint8_t GLUE(symbol, End)[];                 \
-    }
+    extern const uint8_t symbol[];                                \
+    extern const uint8_t GLUE(symbol, End)[];
 // clang-format on
-#define INCLUDE_BIN_SIZE(symbol)                                                                                       \
-	static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(&GLUE(symbol, End)) -                                    \
-							 reinterpret_cast<std::uintptr_t>(&symbol))
-#define INCLUDE_BIN_SPAN(symbol) std::span<const std::uint8_t>(symbol, INCLUDE_BIN_SIZE(symbol))
+#define INCLUDE_BIN_SIZE(symbol) ((size_t)((uintptr_t)&GLUE(symbol, End) - (uintptr_t)&symbol))
 #endif

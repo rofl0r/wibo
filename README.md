@@ -12,21 +12,36 @@ Available builds:
 
 ## Building
 
+Requires GNU Make, GCC (or Clang) and, for 32-bit builds, multilib support.
+
 ```sh
-cmake --preset debug
-cmake --build --preset debug
+make
 ```
 
-This will produce an x86 (32-bit) debug Linux binary at `build/debug/wibo`.
+This produces a release x86 (32-bit) Linux binary at `build/release/wibo`. Use `make CONFIG=debug` for a debug build at `build/debug/wibo`.
 
-Available presets:
+Build variables (pass on the command line, e.g. `make CONFIG=debug ARCH=x86_64`):
 
-- `debug`: Debug Linux x86
-- `release`: Release Linux x86
-- `debug64`: Debug Linux x86_64
-- `release64`: Release Linux x86_64
-- `debug-macos`: Debug macOS x86_64
-- `release-macos`: Release macOS x86_64
+| Variable                  | Default                | Description                                                                                  |
+| ------------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
+| `CONFIG`                  | `release`              | `debug` (`-g -O0`) or `release` (`-O3 -DNDEBUG`)                                             |
+| `ARCH`                    | `i686` (`x86_64` on macOS) | `i686` (32-bit, `-m32`) or `x86_64`. `WIBO_64=1` is shorthand for `ARCH=x86_64`             |
+| `CC`                      | `gcc` (`cc` on macOS)  | Target C compiler                                                                            |
+| `LTO`                     | `0`                    | Set to `1` to build with `-flto`                                                             |
+| `WIBO_ENABLE_LIBURING`    | `0`                    | Set to `1` to enable the io_uring backend (links system `liburing`)                          |
+| `WIBO_ENABLE_WINE_DLLS`   | `1`                    | Set to `0` to skip embedding the Wine CRT DLLs (see below)                                   |
+| `MINGW_CC`, `MINGW_WINDRES` | `i686-w64-mingw32-gcc`, `i686-w64-mingw32-windres` | MinGW tools used to build the test fixtures              |
+| `EXTRA_CFLAGS`, `EXTRA_LDFLAGS`, `EXTRA_LIBS` | empty      | Extra flags appended to compile, link, and library steps                                     |
+
+Run `make print-wibo` to print the output path for the current configuration.
+
+Available configurations (`CONFIG` and `ARCH`):
+
+- `make CONFIG=debug`: Debug Linux x86
+- `make`: Release Linux x86
+- `make ARCH=x86_64 CONFIG=debug`: Debug Linux x86_64
+- `make ARCH=x86_64`: Release Linux x86_64
+- macOS: `make CONFIG=debug` and `make` build an x86_64 binary (`build/<config>/wibo`)
 
 ## Usage
 
@@ -76,15 +91,15 @@ wibo -- test.exe a b c
 
 ## Tests
 
-Self-checking Windows fixtures run through CTest. They require a 32-bit MinGW cross toolchain (`i686-w64-mingw32-gcc` and `i686-w64-mingw32-windres`).
+Self-checking Windows fixtures are built with a 32-bit MinGW cross toolchain (`i686-w64-mingw32-gcc` and `i686-w64-mingw32-windres`).
 
 On macOS: use `brew install mingw-w64`.
 
 ```sh
-ctest --preset debug
+make test
 ```
 
-This will cross-compile the fixture executables, run them through `wibo`, and fail if any WinAPI expectations are not met.
+This will cross-compile the fixture executables, run them through `wibo`, and fail if any WinAPI expectations are not met. To run a single fixture, use `make test TEST=wibo.<name>`, and `make list-tests` lists all fixture names.
 
 ## Related Projects
 
@@ -96,6 +111,6 @@ This will cross-compile the fixture executables, run them through `wibo`, and fa
 
 wibo is licensed under the MIT License. See [`LICENSE`](LICENSE) for details.
 
-Optionally, wibo embeds custom Wine CRT DLL builds from [encounter/winedll](https://github.com/encounter/winedll). To disable, set `-DWIBO_ENABLE_WINE_DLLS=NO`.
+Optionally, wibo embeds custom Wine CRT DLL builds from [encounter/winedll](https://github.com/encounter/winedll). To disable, build with `WIBO_ENABLE_WINE_DLLS=0` (for example `make WIBO_ENABLE_WINE_DLLS=0`).
 
 Wine is licensed under the LGPLv2.1+. See [`winedll/LICENSE`](https://github.com/encounter/winedll/blob/main/LICENSE) and [`winedll/COPYING.LIB`](https://github.com/encounter/winedll/blob/main/COPYING.LIB) for details.

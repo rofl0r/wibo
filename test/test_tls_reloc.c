@@ -28,6 +28,9 @@ typedef struct {
 	tls_get_template_value_fn valueFn;
 	HANDLE readyEvent;
 	HANDLE startEvent;
+	// When set, the worker stays alive after recording its slot so that its TLS block cannot be recycled
+	// for another thread before that thread records its own slot.
+	HANDLE releaseEvent;
 	void *observedPointer;
 	intptr_t pointerOffset;
 	int observedValue;
@@ -53,7 +56,9 @@ static DWORD WINAPI tls_worker_proc(LPVOID param) {
 	ctx->observedPointer = threadSlot;
 	ctx->pointerOffset = (intptr_t)((uint8_t *)expectedPtr - (uint8_t *)threadSlot);
 	ctx->observedValue = ctx->valueFn ? ctx->valueFn() : *(int *)expectedPtr;
-
+	if (ctx->releaseEvent) {
+		TEST_CHECK_EQ(WAIT_OBJECT_0, WaitForSingleObject(ctx->releaseEvent, 5000));
+	}
 	return 0;
 }
 
@@ -68,8 +73,10 @@ int main(void) {
 	WorkerCtx existingWorkerCtx = {0};
 	existingWorkerCtx.readyEvent = CreateEventA(NULL, TRUE, FALSE, NULL);
 	existingWorkerCtx.startEvent = CreateEventA(NULL, TRUE, FALSE, NULL);
+	existingWorkerCtx.releaseEvent = CreateEventA(NULL, TRUE, FALSE, NULL);
 	TEST_CHECK(existingWorkerCtx.readyEvent != NULL);
 	TEST_CHECK(existingWorkerCtx.startEvent != NULL);
+	TEST_CHECK(existingWorkerCtx.releaseEvent != NULL);
 
 	HANDLE existingWorkerThread = CreateThread(NULL, 0, tls_worker_proc, &existingWorkerCtx, 0, NULL);
 	TEST_CHECK(existingWorkerThread != NULL);
@@ -132,8 +139,9 @@ int main(void) {
 	void *mainThreadSlot = tlsArray[moduleIndex];
 	TEST_CHECK(mainThreadSlot != NULL);
 
-	TEST_CHECK_EQ(WAIT_OBJECT_0, WaitForSingleObject(existingWorkerThread, 1000));
 	TEST_CHECK_EQ(WAIT_OBJECT_0, WaitForSingleObject(newWorkerThread, 1000));
+	TEST_CHECK(SetEvent(existingWorkerCtx.releaseEvent));
+	TEST_CHECK_EQ(WAIT_OBJECT_0, WaitForSingleObject(existingWorkerThread, 1000));
 	TEST_CHECK(existingWorkerCtx.observedPointer != NULL);
 	TEST_CHECK(newWorkerCtx.observedPointer != NULL);
 	TEST_CHECK(existingWorkerCtx.observedPointer != mainThreadSlot);

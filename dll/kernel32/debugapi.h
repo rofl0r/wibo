@@ -2,9 +2,5 @@
 
 #include "types.h"
 
-namespace kernel32 {
-
-BOOL WINAPI IsDebuggerPresent();
+BOOL WINAPI IsDebuggerPresent(void);
 void WINAPI OutputDebugStringA(LPCSTR lpOutputString);
-
-} // namespace kernel32

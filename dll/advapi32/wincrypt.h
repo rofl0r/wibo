@@ -2,19 +2,17 @@
 
 #include "types.h"
 
-using ALG_ID = DWORD;
-using HCRYPTPROV = ULONG_PTR;
-using HCRYPTKEY = ULONG_PTR;
-using HCRYPTHASH = ULONG_PTR;
+typedef DWORD ALG_ID;
+typedef ULONG_PTR HCRYPTPROV;
+typedef ULONG_PTR HCRYPTKEY;
+typedef ULONG_PTR HCRYPTHASH;
 
-constexpr ALG_ID CALG_MD5 = 0x00008003;
-constexpr ALG_ID CALG_SHA1 = 0x00008004;
+#define CALG_MD5 ((ALG_ID)0x00008003)
+#define CALG_SHA1 ((ALG_ID)0x00008004)
 
-constexpr DWORD HP_ALGID = 0x00000001;
-constexpr DWORD HP_HASHVAL = 0x00000002;
-constexpr DWORD HP_HASHSIZE = 0x00000004;
-
-namespace advapi32 {
+#define HP_ALGID ((DWORD)0x00000001)
+#define HP_HASHVAL ((DWORD)0x00000002)
+#define HP_HASHSIZE ((DWORD)0x00000004)
 
 BOOL WINAPI CryptReleaseContext(HCRYPTPROV hProv, DWORD dwFlags);
 BOOL WINAPI CryptAcquireContextW(HCRYPTPROV *phProv, LPCWSTR pszContainer, LPCWSTR pszProvider, DWORD dwProvType,
@@ -24,5 +22,3 @@ BOOL WINAPI CryptCreateHash(HCRYPTPROV hProv, ALG_ID Algid, HCRYPTKEY hKey, DWOR
 BOOL WINAPI CryptHashData(HCRYPTHASH hHash, const BYTE *pbData, DWORD dwDataLen, DWORD dwFlags);
 BOOL WINAPI CryptGetHashParam(HCRYPTHASH hHash, DWORD dwParam, BYTE *pbData, DWORD *pdwDataLen, DWORD dwFlags);
 BOOL WINAPI CryptDestroyHash(HCRYPTHASH hHash);
-
-} // namespace advapi32

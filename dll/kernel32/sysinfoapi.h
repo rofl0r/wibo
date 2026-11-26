@@ -3,7 +3,7 @@
 #include "minwinbase.h"
 #include "types.h"
 
-struct SYSTEM_INFO {
+typedef struct SYSTEM_INFO {
 	union {
 		DWORD dwOemId;
 		struct {
@@ -20,62 +20,71 @@ struct SYSTEM_INFO {
 	DWORD dwAllocationGranularity;
 	WORD wProcessorLevel;
 	WORD wProcessorRevision;
-};
+} SYSTEM_INFO;
 
-using LPSYSTEM_INFO = SYSTEM_INFO *;
+typedef SYSTEM_INFO *LPSYSTEM_INFO;
 
-struct OSVERSIONINFOA {
+typedef struct OSVERSIONINFOA {
 	DWORD dwOSVersionInfoSize;
 	DWORD dwMajorVersion;
 	DWORD dwMinorVersion;
 	DWORD dwBuildNumber;
 	DWORD dwPlatformId;
 	char szCSDVersion[128];
-};
+} OSVERSIONINFOA;
 
-using LPOSVERSIONINFOA = OSVERSIONINFOA *;
+typedef OSVERSIONINFOA *LPOSVERSIONINFOA;
 
-struct OSVERSIONINFOW {
+typedef struct OSVERSIONINFOW {
 	DWORD dwOSVersionInfoSize;
 	DWORD dwMajorVersion;
 	DWORD dwMinorVersion;
 	DWORD dwBuildNumber;
 	DWORD dwPlatformId;
 	WCHAR szCSDVersion[128];
-};
+} OSVERSIONINFOW;
 
-using LPOSVERSIONINFOW = OSVERSIONINFOW *;
+typedef OSVERSIONINFOW *LPOSVERSIONINFOW;
 
-struct OSVERSIONINFOEXA : OSVERSIONINFOA {
+// C has no struct inheritance, so the EX variants repeat the base fields with the Windows SDK layout.
+typedef struct OSVERSIONINFOEXA {
+	DWORD dwOSVersionInfoSize;
+	DWORD dwMajorVersion;
+	DWORD dwMinorVersion;
+	DWORD dwBuildNumber;
+	DWORD dwPlatformId;
+	char szCSDVersion[128];
 	WORD wServicePackMajor;
 	WORD wServicePackMinor;
 	WORD wSuiteMask;
 	BYTE wProductType;
 	BYTE wReserved;
-};
+} OSVERSIONINFOEXA;
 
-using LPOSVERSIONINFOEXA = OSVERSIONINFOEXA *;
+typedef OSVERSIONINFOEXA *LPOSVERSIONINFOEXA;
 
-struct OSVERSIONINFOEXW : OSVERSIONINFOW {
+typedef struct OSVERSIONINFOEXW {
+	DWORD dwOSVersionInfoSize;
+	DWORD dwMajorVersion;
+	DWORD dwMinorVersion;
+	DWORD dwBuildNumber;
+	DWORD dwPlatformId;
+	WCHAR szCSDVersion[128];
 	WORD wServicePackMajor;
 	WORD wServicePackMinor;
 	WORD wSuiteMask;
 	BYTE wProductType;
 	BYTE wReserved;
-};
+} OSVERSIONINFOEXW;
 
-using LPOSVERSIONINFOEXW = OSVERSIONINFOEXW *;
-
-namespace kernel32 {
+typedef OSVERSIONINFOEXW *LPOSVERSIONINFOEXW;
 
 void WINAPI GetSystemInfo(LPSYSTEM_INFO lpSystemInfo);
 void WINAPI GetSystemTime(LPSYSTEMTIME lpSystemTime);
 void WINAPI GetLocalTime(LPSYSTEMTIME lpSystemTime);
 void WINAPI GetSystemTimeAsFileTime(LPFILETIME lpSystemTimeAsFileTime);
-DWORD WINAPI GetTickCount();
-ULONGLONG WINAPI GetTickCount64();
-DWORD WINAPI GetVersion();
+DWORD WINAPI GetTickCount(void);
+ULONGLONG WINAPI GetTickCount64(void);
+DWORD WINAPI GetVersion(void);
 BOOL WINAPI GetVersionExA(LPOSVERSIONINFOA lpVersionInformation);
 BOOL WINAPI GetVersionExW(LPOSVERSIONINFOW lpVersionInformation);
-
-} // namespace kernel32

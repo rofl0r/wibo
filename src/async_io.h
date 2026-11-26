@@ -3,36 +3,32 @@
 #include "kernel32/internal.h"
 #include "kernel32/minwinbase.h"
 
-#include <optional>
+#include <stdbool.h>
+#include <sys/types.h>
 
-namespace wibo {
+typedef struct AsyncIOBackend AsyncIOBackend;
 
-class AsyncIOBackend {
-  public:
-	virtual ~AsyncIOBackend() = default;
-	virtual bool init() = 0;
-	virtual void shutdown() = 0;
-	[[nodiscard]] virtual bool running() const noexcept = 0;
-	virtual bool queueRead(Pin<kernel32::FileObject> file, OVERLAPPED *ov, void *buffer, DWORD length,
-						   const std::optional<off_t> &offset, bool isPipe) = 0;
-	virtual bool queueWrite(Pin<kernel32::FileObject> file, OVERLAPPED *ov, const void *buffer, DWORD length,
-							const std::optional<off_t> &offset, bool isPipe) = 0;
+// Backends embed this as their first member `base` and receive it as `self`.
+struct AsyncIOBackend {
+	bool (*init)(AsyncIOBackend *self);
+	void (*shutdown)(AsyncIOBackend *self);
+	bool (*running)(const AsyncIOBackend *self);
+	// Takes ownership of one reference to file. offset is NULL to use the current file position.
+	bool (*queueRead)(AsyncIOBackend *self, FileObject *file, OVERLAPPED *ov, void *buffer, DWORD length,
+					  const off_t *offset, bool isPipe);
+	bool (*queueWrite)(AsyncIOBackend *self, FileObject *file, OVERLAPPED *ov, const void *buffer, DWORD length,
+					   const off_t *offset, bool isPipe);
+	void (*destroy)(AsyncIOBackend *self);
 };
 
-namespace detail {
-
 #if WIBO_ENABLE_LIBURING
-std::unique_ptr<AsyncIOBackend> createIoUringBackend();
+AsyncIOBackend *wibo_detail_createIoUringBackend(void);
 #endif
 #ifdef __linux__
-std::unique_ptr<AsyncIOBackend> createEpollBackend();
+AsyncIOBackend *wibo_detail_createEpollBackend(void);
 #endif
 #ifdef __APPLE__
-std::unique_ptr<AsyncIOBackend> createKqueueBackend();
+AsyncIOBackend *wibo_detail_createKqueueBackend(void);
 #endif
 
-} // namespace detail
-
-AsyncIOBackend &asyncIO();
-
-} // namespace wibo
+AsyncIOBackend *wibo_asyncIO(void);

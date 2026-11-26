@@ -3,17 +3,17 @@
 #include "minwinbase.h"
 #include "types.h"
 
-struct PROCESS_INFORMATION {
+typedef struct PROCESS_INFORMATION {
 	HANDLE hProcess;
 	HANDLE hThread;
 	DWORD dwProcessId;
 	DWORD dwThreadId;
-};
+} PROCESS_INFORMATION;
 
-using PPROCESS_INFORMATION = PROCESS_INFORMATION *;
-using LPPROCESS_INFORMATION = PROCESS_INFORMATION *;
+typedef PROCESS_INFORMATION *PPROCESS_INFORMATION;
+typedef PROCESS_INFORMATION *LPPROCESS_INFORMATION;
 
-struct STARTUPINFOA {
+typedef struct STARTUPINFOA {
 	DWORD cb;
 	GUEST_PTR lpReserved;
 	GUEST_PTR lpDesktop;
@@ -32,11 +32,11 @@ struct STARTUPINFOA {
 	HANDLE hStdInput;
 	HANDLE hStdOutput;
 	HANDLE hStdError;
-};
+} STARTUPINFOA;
 
-using LPSTARTUPINFOA = STARTUPINFOA *;
+typedef STARTUPINFOA *LPSTARTUPINFOA;
 
-struct STARTUPINFOW {
+typedef struct STARTUPINFOW {
 	DWORD cb;
 	GUEST_PTR lpReserved;
 	GUEST_PTR lpDesktop;
@@ -55,16 +55,14 @@ struct STARTUPINFOW {
 	HANDLE hStdInput;
 	HANDLE hStdOutput;
 	HANDLE hStdError;
-};
+} STARTUPINFOW;
 
-using LPSTARTUPINFOW = STARTUPINFOW *;
+typedef STARTUPINFOW *LPSTARTUPINFOW;
 
-constexpr DWORD TLS_OUT_OF_INDEXES = 0xFFFFFFFFu;
-constexpr DWORD NORMAL_PRIORITY_CLASS = 0x00000020;
+#define TLS_OUT_OF_INDEXES 0xFFFFFFFFu
+#define NORMAL_PRIORITY_CLASS 0x00000020
 
 typedef DWORD(_CC_STDCALL *LPTHREAD_START_ROUTINE)(LPVOID);
-
-namespace kernel32 {
 
 HANDLE WINAPI GetCurrentProcess();
 DWORD WINAPI GetCurrentProcessId();
@@ -86,7 +84,7 @@ BOOL WINAPI TlsSetValue(DWORD dwTlsIndex, LPVOID lpTlsValue);
 HANDLE WINAPI CreateThread(LPSECURITY_ATTRIBUTES lpThreadAttributes, SIZE_T dwStackSize,
 						   LPTHREAD_START_ROUTINE lpStartAddress, LPVOID lpParameter, DWORD dwCreationFlags,
 						   LPDWORD lpThreadId);
-[[noreturn]] void WINAPI ExitThread(DWORD dwExitCode);
+_Noreturn void WINAPI ExitThread(DWORD dwExitCode);
 BOOL WINAPI GetExitCodeThread(HANDLE hThread, LPDWORD lpExitCode);
 BOOL WINAPI SetThreadPriority(HANDLE hThread, int nPriority);
 int WINAPI GetThreadPriority(HANDLE hThread);
@@ -104,5 +102,3 @@ BOOL WINAPI CreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine, LPSE
 void WINAPI GetStartupInfoA(LPSTARTUPINFOA lpStartupInfo);
 void WINAPI GetStartupInfoW(LPSTARTUPINFOW lpStartupInfo);
 BOOL WINAPI SetThreadStackGuarantee(PULONG StackSizeInBytes);
-
-} // namespace kernel32

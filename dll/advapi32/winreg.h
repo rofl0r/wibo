@@ -2,7 +2,7 @@
 
 #include "types.h"
 
-struct FILETIME;
+typedef struct FILETIME FILETIME;
 
 #ifndef HKEY_CLASSES_ROOT
 #define HKEY_CLASSES_ROOT ((HKEY)(uintptr_t)0x80000000u)
@@ -23,15 +23,13 @@ struct FILETIME;
 #define HKEY_CURRENT_CONFIG ((HKEY)(uintptr_t)0x80000005u)
 #endif
 
-constexpr DWORD REG_OPTION_OPEN_LINK = 0x00000008;
+#define REG_OPTION_OPEN_LINK ((DWORD)0x00000008)
 
-constexpr DWORD REG_CREATED_NEW_KEY = 0x00000001;
-constexpr DWORD REG_OPENED_EXISTING_KEY = 0x00000002;
+#define REG_CREATED_NEW_KEY ((DWORD)0x00000001)
+#define REG_OPENED_EXISTING_KEY ((DWORD)0x00000002)
 
-constexpr REGSAM KEY_WOW64_64KEY = 0x00000100;
-constexpr REGSAM KEY_WOW64_32KEY = 0x00000200;
-
-namespace advapi32 {
+#define KEY_WOW64_64KEY ((REGSAM)0x00000100)
+#define KEY_WOW64_32KEY ((REGSAM)0x00000200)
 
 LSTATUS WINAPI RegCreateKeyExA(HKEY hKey, LPCSTR lpSubKey, DWORD Reserved, LPSTR lpClass, DWORD dwOptions,
 							   REGSAM samDesired, void *lpSecurityAttributes, PHKEY phkResult, LPDWORD lpdwDisposition);
@@ -48,5 +46,3 @@ LSTATUS WINAPI RegEnumKeyExA(HKEY hKey, DWORD dwIndex, LPSTR lpName, LPDWORD lpc
 LSTATUS WINAPI RegEnumKeyExW(HKEY hKey, DWORD dwIndex, LPWSTR lpName, LPDWORD lpcchName, LPDWORD lpReserved,
 							 LPWSTR lpClass, LPDWORD lpcchClass, FILETIME *lpftLastWriteTime);
 LSTATUS WINAPI RegCloseKey(HKEY hKey);
-
-} // namespace advapi32

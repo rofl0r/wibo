@@ -2,31 +2,31 @@
 
 #include "types.h"
 
-struct ACL {
+typedef struct ACL {
 	BYTE AclRevision;
 	BYTE Sbz1;
 	WORD AclSize;
 	WORD AceCount;
 	WORD Sbz2;
-};
+} ACL;
 
-struct ACE_HEADER {
+typedef struct ACE_HEADER {
 	BYTE AceType;
 	BYTE AceFlags;
 	WORD AceSize;
-};
+} ACE_HEADER;
 
-struct ACCESS_ALLOWED_ACE {
+typedef struct ACCESS_ALLOWED_ACE {
 	ACE_HEADER Header;
 	DWORD Mask;
 	DWORD SidStart;
-};
+} ACCESS_ALLOWED_ACE;
 
-struct SID_IDENTIFIER_AUTHORITY {
+typedef struct SID_IDENTIFIER_AUTHORITY {
 	BYTE Value[6];
-};
+} SID_IDENTIFIER_AUTHORITY;
 
-struct SECURITY_DESCRIPTOR {
+typedef struct SECURITY_DESCRIPTOR {
 	BYTE Revision;
 	BYTE Sbz1;
 	WORD Control;
@@ -34,31 +34,31 @@ struct SECURITY_DESCRIPTOR {
 	GUEST_PTR Group;
 	GUEST_PTR Sacl;
 	GUEST_PTR Dacl;
-};
+} SECURITY_DESCRIPTOR;
 
-using PSECURITY_DESCRIPTOR = SECURITY_DESCRIPTOR *;
-using PACL = ACL *;
-using PSID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY *;
-using SECURITY_INFORMATION = DWORD;
+typedef SECURITY_DESCRIPTOR *PSECURITY_DESCRIPTOR;
+typedef ACL *PACL;
+typedef SID_IDENTIFIER_AUTHORITY *PSID_IDENTIFIER_AUTHORITY;
+typedef DWORD SECURITY_INFORMATION;
 
-constexpr DWORD SECURITY_DESCRIPTOR_REVISION = 1;
-constexpr WORD SE_DACL_PRESENT = 0x0004;
-constexpr WORD SE_DACL_DEFAULTED = 0x0008;
+#define SECURITY_DESCRIPTOR_REVISION ((DWORD)1)
+#define SE_DACL_PRESENT ((WORD)0x0004)
+#define SE_DACL_DEFAULTED ((WORD)0x0008)
 
-constexpr BYTE ACL_REVISION1 = 1;
-constexpr BYTE ACL_REVISION2 = 2;
-constexpr BYTE ACL_REVISION3 = 3;
-constexpr BYTE ACL_REVISION4 = 4;
-constexpr BYTE ACL_REVISION = ACL_REVISION2;
-constexpr BYTE ACL_REVISION_DS = ACL_REVISION4;
-constexpr BYTE ACCESS_ALLOWED_ACE_TYPE = 0x00;
-constexpr BYTE SID_MAX_SUB_AUTHORITIES = 15;
-constexpr BYTE SID_REVISION = 1;
+#define ACL_REVISION1 ((BYTE)1)
+#define ACL_REVISION2 ((BYTE)2)
+#define ACL_REVISION3 ((BYTE)3)
+#define ACL_REVISION4 ((BYTE)4)
+#define ACL_REVISION ACL_REVISION2
+#define ACL_REVISION_DS ACL_REVISION4
+#define ACCESS_ALLOWED_ACE_TYPE ((BYTE)0x00)
+#define SID_MAX_SUB_AUTHORITIES ((BYTE)15)
+#define SID_REVISION ((BYTE)1)
 
-struct TOKEN_PRIVILEGES;
-using PTOKEN_PRIVILEGES = TOKEN_PRIVILEGES *;
+typedef struct TOKEN_PRIVILEGES TOKEN_PRIVILEGES;
+typedef TOKEN_PRIVILEGES *PTOKEN_PRIVILEGES;
 
-enum TOKEN_INFORMATION_CLASS : DWORD {
+typedef enum TOKEN_INFORMATION_CLASS {
 	TokenUser = 1,
 	TokenGroups,
 	TokenPrivileges,
@@ -79,9 +79,7 @@ enum TOKEN_INFORMATION_CLASS : DWORD {
 	TokenElevationType,
 	TokenLinkedToken,
 	TokenElevation = 20,
-};
-
-namespace advapi32 {
+} TOKEN_INFORMATION_CLASS;
 
 BOOL WINAPI InitializeAcl(PACL pAcl, DWORD nAclLength, DWORD dwAclRevision);
 BOOL WINAPI AddAccessAllowedAce(PACL pAcl, DWORD dwAceRevision, DWORD AccessMask, PSID pSid);
@@ -108,5 +106,3 @@ BOOL WINAPI AdjustTokenPrivileges(HANDLE TokenHandle, BOOL DisableAllPrivileges,
 								  DWORD BufferLength, PTOKEN_PRIVILEGES PreviousState, LPDWORD ReturnLength);
 BOOL WINAPI SetTokenInformation(HANDLE TokenHandle, TOKEN_INFORMATION_CLASS TokenInformationClass,
 								LPVOID TokenInformation, DWORD TokenInformationLength);
-
-} // namespace advapi32

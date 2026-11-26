@@ -1,13 +1,16 @@
+// C port naming: namespace functions and variables become full-path ns_name (wibo_debugEnabled, wibo_tls_reserveSlot,
+// files_read); namespace types and constants keep bare names; nested types become Outer_Inner; methods become
+// ObjType_method(ObjType *self, ...); factories become ObjType_fromX; std::optional becomes a NULL-able pointer;
+// std::span becomes (ptr, len); owned pointers are freed explicitly; C++ guest_ptr<T> becomes GUEST_PTR, converted with
+// toGuestPtr()/fromGuestPtr() (void * in and out).
 #pragma once
 
 #include "macros.h"
 
-#ifndef offsetof
-#define offsetof(type, member) __builtin_offsetof(type, member)
-#endif
-#ifndef va_list
-#define va_list __builtin_va_list
-#endif
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 // Annotation macros for code generation
 #ifdef WIBO_CODEGEN
@@ -46,136 +49,96 @@
 #define GUEST_STDCALL __attribute__((stdcall))
 
 typedef unsigned int GUEST_PTR;
-constexpr GUEST_PTR GUEST_NULL = 0;
+#define GUEST_NULL ((GUEST_PTR)0)
 
 #ifdef __x86_64__
-inline GUEST_PTR toGuestPtr(const void *addr) {
-	unsigned long long addr64 = reinterpret_cast<unsigned long long>(addr);
+static inline GUEST_PTR toGuestPtr(const void *addr) {
+	uint64_t addr64 = (uint64_t)(uintptr_t)addr;
 	if (addr64 > 0xFFFFFFFF)
 		__builtin_trap();
-	return static_cast<GUEST_PTR>(addr64);
+	return (GUEST_PTR)addr64;
 }
 #else
-inline GUEST_PTR toGuestPtr(const void *addr) { return static_cast<GUEST_PTR>(reinterpret_cast<unsigned long>(addr)); }
+static inline GUEST_PTR toGuestPtr(const void *addr) {
+	return (GUEST_PTR)(uintptr_t)addr;
+}
 #endif
-template <typename T = void> inline T *fromGuestPtr(GUEST_PTR addr) { return reinterpret_cast<T *>(addr); }
+static inline void *fromGuestPtr(GUEST_PTR addr) {
+	return (void *)(uintptr_t)addr;
+}
 
-using VOID = void;
-using HANDLE = int;
-using HMODULE = HANDLE;
-using HGLOBAL = GUEST_PTR;
-using HLOCAL = GUEST_PTR;
-using HRSRC = GUEST_PTR;
-using HINSTANCE = HANDLE;
-using LPHANDLE = HANDLE *;
-using PHANDLE = HANDLE *;
-using HKL = HANDLE;
-using PVOID = VOID *;
-using LPVOID = VOID *;
-using LPCVOID = const VOID *;
-using FARPROC = VOID *;
-using WORD = unsigned short;
-using LPWORD = WORD *;
-using LANGID = WORD;
-using ATOM = WORD;
-using DWORD = unsigned int;
-using PDWORD = DWORD *;
-using LPDWORD = DWORD *;
-using LONG = int;
-using PLONG = LONG *;
-using ULONG = unsigned int;
-using PULONG = ULONG *;
-using LONGLONG __attribute__((aligned(8))) = long long;
-using ULONGLONG __attribute__((aligned(8))) = unsigned long long;
-using LONG_PTR = int;
-using ULONG_PTR = unsigned int;
-using UINT_PTR = unsigned int;
-using DWORD_PTR = ULONG_PTR;
-using PDWORD_PTR = DWORD_PTR *;
-using SHORT = short;
-using USHORT = unsigned short;
-using CHAR = char;
-using LPSTR = CHAR *;
-using LPCSTR = const char *;
-using LPCCH = const char *;
-using WCHAR = unsigned short;
-using LPWSTR = WCHAR *;
-using LPCWSTR = const WCHAR *;
-using LPCWCH = const WCHAR *;
-using LPCH = CHAR *;
-using LPWCH = WCHAR *;
-using BOOL = int;
-using PBOOL = BOOL *;
-using LPBOOL = BOOL *;
-using UCHAR = unsigned char;
-using PUCHAR = UCHAR *;
-using SIZE_T = ULONG_PTR;
-using PSIZE_T = SIZE_T *;
-using BYTE = unsigned char;
-using BOOLEAN = unsigned char;
-using UINT = unsigned int;
-using PUINT = UINT *;
-using HKEY = HANDLE;
-using PHKEY = HKEY *;
-using PSID = VOID *;
-using REGSAM = DWORD;
-using LSTATUS = LONG;
-using LCID = DWORD;
-using LCTYPE = DWORD;
-using HWINSTA = HANDLE;
-using HWND = HANDLE;
-using PBYTE = BYTE *;
-using LPBYTE = BYTE *;
-using PWSTR = WCHAR *;
+typedef void VOID;
+typedef int HANDLE;
+typedef HANDLE HMODULE;
+typedef GUEST_PTR HGLOBAL;
+typedef GUEST_PTR HLOCAL;
+typedef GUEST_PTR HRSRC;
+typedef HANDLE HINSTANCE;
+typedef HANDLE *LPHANDLE;
+typedef HANDLE *PHANDLE;
+typedef HANDLE HKL;
+typedef VOID *PVOID;
+typedef VOID *LPVOID;
+typedef const VOID *LPCVOID;
+typedef VOID *FARPROC;
+typedef unsigned short WORD;
+typedef WORD *LPWORD;
+typedef WORD LANGID;
+typedef WORD ATOM;
+typedef unsigned int DWORD;
+typedef DWORD *PDWORD;
+typedef DWORD *LPDWORD;
+typedef int LONG;
+typedef LONG *PLONG;
+typedef unsigned int ULONG;
+typedef ULONG *PULONG;
+typedef long long LONGLONG __attribute__((aligned(8)));
+typedef unsigned long long ULONGLONG __attribute__((aligned(8)));
+typedef int LONG_PTR;
+typedef unsigned int ULONG_PTR;
+typedef unsigned int UINT_PTR;
+typedef ULONG_PTR DWORD_PTR;
+typedef DWORD_PTR *PDWORD_PTR;
+typedef short SHORT;
+typedef unsigned short USHORT;
+typedef char CHAR;
+typedef CHAR *LPSTR;
+typedef const char *LPCSTR;
+typedef const char *LPCCH;
+typedef unsigned short WCHAR;
+typedef WCHAR *LPWSTR;
+typedef const WCHAR *LPCWSTR;
+typedef const WCHAR *LPCWCH;
+typedef CHAR *LPCH;
+typedef WCHAR *LPWCH;
+typedef int BOOL;
+typedef BOOL *PBOOL;
+typedef BOOL *LPBOOL;
+typedef unsigned char UCHAR;
+typedef UCHAR *PUCHAR;
+typedef ULONG_PTR SIZE_T;
+typedef SIZE_T *PSIZE_T;
+typedef unsigned char BYTE;
+typedef unsigned char BOOLEAN;
+typedef unsigned int UINT;
+typedef UINT *PUINT;
+typedef HANDLE HKEY;
+typedef HKEY *PHKEY;
+typedef VOID *PSID;
+typedef DWORD REGSAM;
+typedef LONG LSTATUS;
+typedef DWORD LCID;
+typedef DWORD LCTYPE;
+typedef HANDLE HWINSTA;
+typedef HANDLE HWND;
+typedef BYTE *PBYTE;
+typedef BYTE *LPBYTE;
+typedef WCHAR *PWSTR;
 
-constexpr HANDLE NO_HANDLE = 0;
+#define NO_HANDLE ((HANDLE)0)
 
-using NTSTATUS = LONG;
-using HRESULT = LONG;
-
-template <typename T = void> struct guest_ptr {
-	GUEST_PTR ptr;
-
-	explicit guest_ptr(GUEST_PTR p) : ptr(p) {}
-	explicit guest_ptr(const T *p) : ptr(toGuestPtr(p)) {}
-	guest_ptr(const guest_ptr &p) = default;
-	guest_ptr(guest_ptr &&p) : ptr(p.ptr) {}
-	guest_ptr &operator=(T *p) {
-		ptr = toGuestPtr(p);
-		return *this;
-	}
-	guest_ptr &operator=(guest_ptr p) {
-		ptr = p.ptr;
-		return *this;
-	}
-	[[nodiscard]] T *get() const { return reinterpret_cast<T *>(ptr); }
-	[[nodiscard]] GUEST_PTR get_guest() const { return ptr; }
-	T &operator*() const { return *reinterpret_cast<T *>(ptr); }
-	T *operator->() const { return reinterpret_cast<T *>(ptr); }
-	operator T *() const { return reinterpret_cast<T *>(ptr); } // NOLINT(google-explicit-constructor)
-	operator bool() const { return ptr != GUEST_NULL; }			// NOLINT(google-explicit-constructor)
-	T &operator[](SIZE_T index) const { return get()[index]; }
-};
-
-template <> struct guest_ptr<void> {
-	GUEST_PTR ptr;
-
-	explicit guest_ptr(GUEST_PTR p) : ptr(p) {}
-	explicit guest_ptr(void *p) : ptr(toGuestPtr(p)) {}
-	guest_ptr(const guest_ptr &p) = default;
-	guest_ptr(guest_ptr &&p) : ptr(p.ptr) {}
-	guest_ptr &operator=(void *p) {
-		ptr = toGuestPtr(p);
-		return *this;
-	}
-	guest_ptr &operator=(guest_ptr p) {
-		ptr = p.ptr;
-		return *this;
-	}
-	[[nodiscard]] void *get() const { return reinterpret_cast<void *>(ptr); }
-	[[nodiscard]] GUEST_PTR get_guest() const { return ptr; }
-	operator bool() const { return ptr != GUEST_NULL; } // NOLINT(google-explicit-constructor)
-};
+typedef LONG NTSTATUS;
+typedef LONG HRESULT;
 
 typedef union _LARGE_INTEGER {
 	struct {
@@ -203,10 +166,10 @@ typedef union _ULARGE_INTEGER {
 
 typedef struct _RTL_BITMAP {
 	ULONG SizeOfBitMap;
-	guest_ptr<ULONG> Buffer;
+	GUEST_PTR Buffer;
 } RTL_BITMAP, *PRTL_BITMAP;
 
-enum FILE_INFORMATION_CLASS {
+typedef enum FILE_INFORMATION_CLASS {
 	FileDirectoryInformation = 1,
 	FileFullDirectoryInformation = 2,
 	FileBothDirectoryInformation = 3,
@@ -227,7 +190,7 @@ enum FILE_INFORMATION_CLASS {
 	FileAllInformation = 18,
 	FileAllocationInformation = 19,
 	FileEndOfFileInformation = 20,
-};
+} FILE_INFORMATION_CLASS;
 
 typedef struct _FILE_BASIC_INFORMATION {
 	LARGE_INTEGER CreationTime;
@@ -255,136 +218,136 @@ typedef struct _FILE_NAME_INFORMATION {
 	WCHAR FileName[1];
 } FILE_NAME_INFORMATION, *PFILE_NAME_INFORMATION;
 
-struct GUID {
+typedef struct GUID {
 	DWORD Data1;
 	WORD Data2;
 	WORD Data3;
 	BYTE Data4[8];
-};
-struct LUID {
+} GUID;
+typedef struct LUID {
 	DWORD LowPart;
 	LONG HighPart;
-};
-using PLUID = LUID *;
-using LPLUID = LUID *;
+} LUID;
+typedef LUID *PLUID;
+typedef LUID *LPLUID;
 
-constexpr BOOL TRUE = 1;
-constexpr BOOL FALSE = 0;
+#define TRUE ((BOOL)1)
+#define FALSE ((BOOL)0)
 
-constexpr DWORD STILL_ACTIVE = 259;
+#define STILL_ACTIVE ((DWORD)259)
 
-constexpr DWORD FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
-constexpr DWORD FILE_FLAG_DELETE_ON_CLOSE = 0x04000000;
-constexpr DWORD FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000;
-constexpr DWORD FILE_FLAG_NO_BUFFERING = 0x20000000;
-constexpr DWORD FILE_FLAG_OVERLAPPED = 0x40000000;
-constexpr DWORD FILE_FLAG_WRITE_THROUGH = 0x80000000;
+#define FILE_FLAG_BACKUP_SEMANTICS ((DWORD)0x02000000)
+#define FILE_FLAG_DELETE_ON_CLOSE ((DWORD)0x04000000)
+#define FILE_FLAG_FIRST_PIPE_INSTANCE ((DWORD)0x00080000)
+#define FILE_FLAG_NO_BUFFERING ((DWORD)0x20000000)
+#define FILE_FLAG_OVERLAPPED ((DWORD)0x40000000)
+#define FILE_FLAG_WRITE_THROUGH ((DWORD)0x80000000)
 
-constexpr DWORD STD_INPUT_HANDLE = ((DWORD)-10);
-constexpr DWORD STD_OUTPUT_HANDLE = ((DWORD)-11);
-constexpr DWORD STD_ERROR_HANDLE = ((DWORD)-12);
+#define STD_INPUT_HANDLE ((DWORD)(-10))
+#define STD_OUTPUT_HANDLE ((DWORD)(-11))
+#define STD_ERROR_HANDLE ((DWORD)(-12))
 
-constexpr DWORD FILE_READ_DATA = 0x00000001;
-constexpr DWORD FILE_LIST_DIRECTORY = 0x00000001;
-constexpr DWORD FILE_WRITE_DATA = 0x00000002;
-constexpr DWORD FILE_ADD_FILE = 0x00000002;
-constexpr DWORD FILE_APPEND_DATA = 0x00000004;
-constexpr DWORD FILE_ADD_SUBDIRECTORY = 0x00000004;
-constexpr DWORD FILE_CREATE_PIPE_INSTANCE = 0x00000004;
-constexpr DWORD FILE_READ_EA = 0x00000008;
-constexpr DWORD FILE_WRITE_EA = 0x00000010;
-constexpr DWORD FILE_EXECUTE = 0x00000020;
-constexpr DWORD FILE_TRAVERSE = 0x00000020;
-constexpr DWORD FILE_DELETE_CHILD = 0x00000040;
-constexpr DWORD FILE_READ_ATTRIBUTES = 0x00000080;
-constexpr DWORD FILE_WRITE_ATTRIBUTES = 0x00000100;
+#define FILE_READ_DATA ((DWORD)0x00000001)
+#define FILE_LIST_DIRECTORY ((DWORD)0x00000001)
+#define FILE_WRITE_DATA ((DWORD)0x00000002)
+#define FILE_ADD_FILE ((DWORD)0x00000002)
+#define FILE_APPEND_DATA ((DWORD)0x00000004)
+#define FILE_ADD_SUBDIRECTORY ((DWORD)0x00000004)
+#define FILE_CREATE_PIPE_INSTANCE ((DWORD)0x00000004)
+#define FILE_READ_EA ((DWORD)0x00000008)
+#define FILE_WRITE_EA ((DWORD)0x00000010)
+#define FILE_EXECUTE ((DWORD)0x00000020)
+#define FILE_TRAVERSE ((DWORD)0x00000020)
+#define FILE_DELETE_CHILD ((DWORD)0x00000040)
+#define FILE_READ_ATTRIBUTES ((DWORD)0x00000080)
+#define FILE_WRITE_ATTRIBUTES ((DWORD)0x00000100)
 
-constexpr DWORD SYNCHRONIZE = 0x00100000;
-constexpr DWORD DELETE = 0x00010000;
-constexpr DWORD WRITE_DAC = 0x00040000;
-constexpr DWORD WRITE_OWNER = 0x00080000;
-constexpr DWORD ACCESS_SYSTEM_SECURITY = 0x01000000;
+#define SYNCHRONIZE ((DWORD)0x00100000)
+#define DELETE ((DWORD)0x00010000)
+#define WRITE_DAC ((DWORD)0x00040000)
+#define WRITE_OWNER ((DWORD)0x00080000)
+#define ACCESS_SYSTEM_SECURITY ((DWORD)0x01000000)
 
-constexpr DWORD STANDARD_RIGHTS_READ = 0x00020000;
-constexpr DWORD STANDARD_RIGHTS_WRITE = 0x00020000;
-constexpr DWORD STANDARD_RIGHTS_EXECUTE = 0x00020000;
-constexpr DWORD STANDARD_RIGHTS_REQUIRED = 0x000f0000;
-constexpr DWORD STANDARD_RIGHTS_ALL = 0x001f0000;
+#define STANDARD_RIGHTS_READ ((DWORD)0x00020000)
+#define STANDARD_RIGHTS_WRITE ((DWORD)0x00020000)
+#define STANDARD_RIGHTS_EXECUTE ((DWORD)0x00020000)
+#define STANDARD_RIGHTS_REQUIRED ((DWORD)0x000f0000)
+#define STANDARD_RIGHTS_ALL ((DWORD)0x001f0000)
 
-constexpr DWORD FILE_GENERIC_READ =
-	STANDARD_RIGHTS_READ | FILE_READ_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA | SYNCHRONIZE;
-constexpr DWORD FILE_GENERIC_WRITE =
-	STANDARD_RIGHTS_WRITE | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA | FILE_APPEND_DATA | SYNCHRONIZE;
-constexpr DWORD FILE_GENERIC_EXECUTE = STANDARD_RIGHTS_EXECUTE | FILE_READ_ATTRIBUTES | FILE_EXECUTE | SYNCHRONIZE;
-constexpr DWORD FILE_ALL_ACCESS = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x1FF;
+#define FILE_GENERIC_READ                                                                                              \
+	(STANDARD_RIGHTS_READ | FILE_READ_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA | SYNCHRONIZE)
+#define FILE_GENERIC_WRITE                                                                                             \
+	(STANDARD_RIGHTS_WRITE | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA | FILE_APPEND_DATA | SYNCHRONIZE)
+#define FILE_GENERIC_EXECUTE (STANDARD_RIGHTS_EXECUTE | FILE_READ_ATTRIBUTES | FILE_EXECUTE | SYNCHRONIZE)
+#define FILE_ALL_ACCESS (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x1FF)
 
-constexpr DWORD EVENT_ALL_ACCESS = 0x1F0003;
-constexpr DWORD MUTEX_ALL_ACCESS = 0x1F0001;
-constexpr DWORD SEMAPHORE_ALL_ACCESS = 0x1F0003;
+#define EVENT_ALL_ACCESS ((DWORD)0x1F0003)
+#define MUTEX_ALL_ACCESS ((DWORD)0x1F0001)
+#define SEMAPHORE_ALL_ACCESS ((DWORD)0x1F0003)
 
-constexpr DWORD GENERIC_READ = 0x80000000;
-constexpr DWORD GENERIC_WRITE = 0x40000000;
-constexpr DWORD GENERIC_EXECUTE = 0x20000000;
-constexpr DWORD GENERIC_ALL = 0x10000000;
+#define GENERIC_READ ((DWORD)0x80000000)
+#define GENERIC_WRITE ((DWORD)0x40000000)
+#define GENERIC_EXECUTE ((DWORD)0x20000000)
+#define GENERIC_ALL ((DWORD)0x10000000)
 
 // Page protection constants
-constexpr DWORD PAGE_NOACCESS = 0x01;
-constexpr DWORD PAGE_READONLY = 0x02;
-constexpr DWORD PAGE_READWRITE = 0x04;
-constexpr DWORD PAGE_WRITECOPY = 0x08;
-constexpr DWORD PAGE_EXECUTE = 0x10;
-constexpr DWORD PAGE_EXECUTE_READ = 0x20;
-constexpr DWORD PAGE_EXECUTE_READWRITE = 0x40;
-constexpr DWORD PAGE_EXECUTE_WRITECOPY = 0x80;
-constexpr DWORD PAGE_GUARD = 0x100;
-constexpr DWORD PAGE_NOCACHE = 0x200;
-constexpr DWORD PAGE_WRITECOMBINE = 0x400;
+#define PAGE_NOACCESS ((DWORD)0x01)
+#define PAGE_READONLY ((DWORD)0x02)
+#define PAGE_READWRITE ((DWORD)0x04)
+#define PAGE_WRITECOPY ((DWORD)0x08)
+#define PAGE_EXECUTE ((DWORD)0x10)
+#define PAGE_EXECUTE_READ ((DWORD)0x20)
+#define PAGE_EXECUTE_READWRITE ((DWORD)0x40)
+#define PAGE_EXECUTE_WRITECOPY ((DWORD)0x80)
+#define PAGE_GUARD ((DWORD)0x100)
+#define PAGE_NOCACHE ((DWORD)0x200)
+#define PAGE_WRITECOMBINE ((DWORD)0x400)
 
 // Allocation type and memory state constants
-constexpr DWORD MEM_COMMIT = 0x00001000;
-constexpr DWORD MEM_RESERVE = 0x00002000;
-constexpr DWORD MEM_DECOMMIT = 0x00004000;
-constexpr DWORD MEM_RELEASE = 0x00008000;
-constexpr DWORD MEM_FREE = 0x00010000;
-constexpr DWORD MEM_PRIVATE = 0x00020000;
-constexpr DWORD MEM_MAPPED = 0x00040000;
-constexpr DWORD MEM_RESET = 0x00080000;
-constexpr DWORD MEM_TOP_DOWN = 0x00100000;
-constexpr DWORD MEM_WRITE_WATCH = 0x00200000;
-constexpr DWORD MEM_PHYSICAL = 0x00400000;
-constexpr DWORD MEM_RESET_UNDO = 0x01000000;
-constexpr DWORD MEM_LARGE_PAGES = 0x20000000;
-constexpr DWORD MEM_COALESCE_PLACEHOLDERS = 0x00000001;
-constexpr DWORD MEM_PRESERVE_PLACEHOLDER = 0x00000002;
-constexpr DWORD MEM_IMAGE = 0x01000000;
+#define MEM_COMMIT ((DWORD)0x00001000)
+#define MEM_RESERVE ((DWORD)0x00002000)
+#define MEM_DECOMMIT ((DWORD)0x00004000)
+#define MEM_RELEASE ((DWORD)0x00008000)
+#define MEM_FREE ((DWORD)0x00010000)
+#define MEM_PRIVATE ((DWORD)0x00020000)
+#define MEM_MAPPED ((DWORD)0x00040000)
+#define MEM_RESET ((DWORD)0x00080000)
+#define MEM_TOP_DOWN ((DWORD)0x00100000)
+#define MEM_WRITE_WATCH ((DWORD)0x00200000)
+#define MEM_PHYSICAL ((DWORD)0x00400000)
+#define MEM_RESET_UNDO ((DWORD)0x01000000)
+#define MEM_LARGE_PAGES ((DWORD)0x20000000)
+#define MEM_COALESCE_PLACEHOLDERS ((DWORD)0x00000001)
+#define MEM_PRESERVE_PLACEHOLDER ((DWORD)0x00000002)
+#define MEM_IMAGE ((DWORD)0x01000000)
 
 // File mapping access flags
-constexpr DWORD FILE_MAP_COPY = 0x00000001;
-constexpr DWORD FILE_MAP_WRITE = 0x00000002;
-constexpr DWORD FILE_MAP_READ = 0x00000004;
-constexpr DWORD FILE_MAP_EXECUTE = 0x00000020;
-constexpr DWORD FILE_MAP_ALL_ACCESS = 0x000f001f;
+#define FILE_MAP_COPY ((DWORD)0x00000001)
+#define FILE_MAP_WRITE ((DWORD)0x00000002)
+#define FILE_MAP_READ ((DWORD)0x00000004)
+#define FILE_MAP_EXECUTE ((DWORD)0x00000020)
+#define FILE_MAP_ALL_ACCESS ((DWORD)0x000f001f)
 
 // File share modes
-constexpr DWORD FILE_SHARE_READ = 0x00000001;
-constexpr DWORD FILE_SHARE_WRITE = 0x00000002;
-constexpr DWORD FILE_SHARE_DELETE = 0x00000004;
+#define FILE_SHARE_READ ((DWORD)0x00000001)
+#define FILE_SHARE_WRITE ((DWORD)0x00000002)
+#define FILE_SHARE_DELETE ((DWORD)0x00000004)
 
-constexpr DWORD PIPE_ACCESS_INBOUND = 0x00000001;
-constexpr DWORD PIPE_ACCESS_OUTBOUND = 0x00000002;
-constexpr DWORD PIPE_ACCESS_DUPLEX = 0x00000003;
+#define PIPE_ACCESS_INBOUND ((DWORD)0x00000001)
+#define PIPE_ACCESS_OUTBOUND ((DWORD)0x00000002)
+#define PIPE_ACCESS_DUPLEX ((DWORD)0x00000003)
 
-constexpr DWORD PIPE_TYPE_BYTE = 0x00000000;
-constexpr DWORD PIPE_TYPE_MESSAGE = 0x00000004;
-constexpr DWORD PIPE_READMODE_BYTE = 0x00000000;
-constexpr DWORD PIPE_READMODE_MESSAGE = 0x00000002;
-constexpr DWORD PIPE_WAIT = 0x00000000;
-constexpr DWORD PIPE_NOWAIT = 0x00000001;
-constexpr DWORD PIPE_ACCEPT_REMOTE_CLIENTS = 0x00000000;
-constexpr DWORD PIPE_REJECT_REMOTE_CLIENTS = 0x00000008;
-constexpr DWORD PIPE_UNLIMITED_INSTANCES = 255;
+#define PIPE_TYPE_BYTE ((DWORD)0x00000000)
+#define PIPE_TYPE_MESSAGE ((DWORD)0x00000004)
+#define PIPE_READMODE_BYTE ((DWORD)0x00000000)
+#define PIPE_READMODE_MESSAGE ((DWORD)0x00000002)
+#define PIPE_WAIT ((DWORD)0x00000000)
+#define PIPE_NOWAIT ((DWORD)0x00000001)
+#define PIPE_ACCEPT_REMOTE_CLIENTS ((DWORD)0x00000000)
+#define PIPE_REJECT_REMOTE_CLIENTS ((DWORD)0x00000008)
+#define PIPE_UNLIMITED_INSTANCES ((DWORD)255)
 
-constexpr SIZE_T kTlsSlotCount = 64;
+#define kTlsSlotCount ((SIZE_T)64)
 
 typedef struct _UNICODE_STRING {
 	USHORT Length;
@@ -414,7 +377,7 @@ typedef struct _PEB_LDR_DATA {
 } PEB_LDR_DATA, *PPEB_LDR_DATA;
 
 typedef void(_CC_STDCALL *PS_POST_PROCESS_INIT_ROUTINE)();
-using PPS_POST_PROCESS_INIT_ROUTINE = PS_POST_PROCESS_INIT_ROUTINE *;
+typedef PS_POST_PROCESS_INIT_ROUTINE *PPS_POST_PROCESS_INIT_ROUTINE;
 
 typedef struct _PEB {
 	BYTE Reserved1[2];
@@ -439,16 +402,16 @@ typedef struct _PEB {
 } PEB;
 typedef GUEST_PTR PPEB;
 
-struct CLIENT_ID {
+typedef struct CLIENT_ID {
 	HANDLE UniqueProcess;
 	HANDLE UniqueThread;
-};
+} CLIENT_ID;
 
 struct _ACTIVATION_CONTEXT;
 
 typedef struct _RTL_ACTIVATION_CONTEXT_STACK_FRAME {
 	GUEST_PTR Previous;
-	_ACTIVATION_CONTEXT *ActivationContext;
+	struct _ACTIVATION_CONTEXT *ActivationContext;
 	ULONG Flags;
 } RTL_ACTIVATION_CONTEXT_STACK_FRAME, *PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
 
@@ -557,33 +520,33 @@ typedef struct _TEB {
 } TEB;
 typedef GUEST_PTR PTEB;
 
-static_assert(offsetof(NT_TIB, Self) == TEB_SELF, "Self pointer offset mismatch");
-static_assert(offsetof(TEB, ThreadLocalStoragePointer) == 0x2C, "TLS pointer offset mismatch");
-static_assert(offsetof(TEB, Peb) == 0x30, "PEB pointer offset mismatch");
-static_assert(offsetof(TEB, LastErrorValue) == 0x34, "LastErrorValue offset mismatch");
-static_assert(offsetof(TEB, GdiTebBatch) == 0x1FC, "GdiTebBatch offset mismatch");
-static_assert(offsetof(TEB, DeallocationStack) == 0xE0C, "DeallocationStack offset mismatch");
-static_assert(offsetof(TEB, TlsSlots) == 0xE10, "TLS slots offset mismatch");
-static_assert(offsetof(TEB, CurrentFsSelector) == TEB_FS_SEL);
-static_assert(offsetof(TEB, CurrentGsSelector) == TEB_GS_SEL);
+_Static_assert(offsetof(NT_TIB, Self) == TEB_SELF, "Self pointer offset mismatch");
+_Static_assert(offsetof(TEB, ThreadLocalStoragePointer) == 0x2C, "TLS pointer offset mismatch");
+_Static_assert(offsetof(TEB, Peb) == 0x30, "PEB pointer offset mismatch");
+_Static_assert(offsetof(TEB, LastErrorValue) == 0x34, "LastErrorValue offset mismatch");
+_Static_assert(offsetof(TEB, GdiTebBatch) == 0x1FC, "GdiTebBatch offset mismatch");
+_Static_assert(offsetof(TEB, DeallocationStack) == 0xE0C, "DeallocationStack offset mismatch");
+_Static_assert(offsetof(TEB, TlsSlots) == 0xE10, "TLS slots offset mismatch");
+_Static_assert(offsetof(TEB, CurrentFsSelector) == TEB_FS_SEL, "FS selector offset mismatch");
+_Static_assert(offsetof(TEB, CurrentGsSelector) == TEB_GS_SEL, "GS selector offset mismatch");
 #ifdef TEB_CS_SEL
-static_assert(offsetof(TEB, CodeSelector) == TEB_CS_SEL);
+_Static_assert(offsetof(TEB, CodeSelector) == TEB_CS_SEL, "CS selector offset mismatch");
 #endif
 #ifdef TEB_DS_SEL
-static_assert(offsetof(TEB, DataSelector) == TEB_DS_SEL);
+_Static_assert(offsetof(TEB, DataSelector) == TEB_DS_SEL, "DS selector offset mismatch");
 #endif
-static_assert(offsetof(TEB, CurrentStackPointer) == TEB_SP);
+_Static_assert(offsetof(TEB, CurrentStackPointer) == TEB_SP, "Stack pointer offset mismatch");
 #ifdef TEB_FSBASE
-static_assert(offsetof(TEB, HostFsBase) == TEB_FSBASE);
+_Static_assert(offsetof(TEB, HostFsBase) == TEB_FSBASE, "HostFsBase offset mismatch");
 #endif
 #ifdef TEB_GSBASE
-static_assert(offsetof(TEB, HostGsBase) == TEB_GSBASE);
+_Static_assert(offsetof(TEB, HostGsBase) == TEB_GSBASE, "HostGsBase offset mismatch");
 #endif
 #ifdef TEB_HAS_FSGSBASE
-static_assert(offsetof(TEB, HasFsGsBase) == TEB_HAS_FSGSBASE);
+_Static_assert(offsetof(TEB, HasFsGsBase) == TEB_HAS_FSGSBASE, "HasFsGsBase offset mismatch");
 #endif
 #ifdef TEB_HOST_CS_SEL
-static_assert(offsetof(TEB, HostCodeSelector) == TEB_HOST_CS_SEL);
+_Static_assert(offsetof(TEB, HostCodeSelector) == TEB_HOST_CS_SEL, "HostCodeSelector offset mismatch");
 #endif
 
 typedef struct _MEMORY_BASIC_INFORMATION {
@@ -599,15 +562,14 @@ typedef struct _MEMORY_BASIC_INFORMATION {
 #define _IOB_ENTRIES 20
 
 typedef struct _iobuf {
-	_iobuf() : _file(-1) {}
-	explicit _iobuf(int file) : _file(file) {}
-
-	GUEST_PTR _ptr = GUEST_NULL;
-	int _cnt = 0;
-	GUEST_PTR _base = GUEST_NULL;
-	int _flag = 0;
+	GUEST_PTR _ptr;
+	int _cnt;
+	GUEST_PTR _base;
+	int _flag;
 	int _file;
-	int _charbuf = 0;
-	int _bufsiz = 0;
-	GUEST_PTR _tmpfname = GUEST_NULL;
+	int _charbuf;
+	int _bufsiz;
+	GUEST_PTR _tmpfname;
 } _FILE;
+// Designated initializer for a _FILE with the given descriptor (C++ default-constructed files use -1).
+#define _FILE_INIT(fd) {._file = (fd)}

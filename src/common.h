@@ -2,18 +2,15 @@
 
 #include "types.h"
 
-#include <cassert>
-#include <cstdint>
-#include <filesystem>
-#include <string>
+#include <assert.h>
+#include <stdint.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <vector>
 
 #define DEBUG_LOG(...)                                                                                                 \
 	do {                                                                                                               \
-		if (wibo::debugEnabled) {                                                                                      \
-			wibo::debug_log(__VA_ARGS__);                                                                              \
+		if (wibo_debugEnabled) {                                                                                       \
+			wibo_debug_log(__VA_ARGS__);                                                                               \
 		}                                                                                                              \
 	} while (0)
 #ifndef NDEBUG
@@ -22,27 +19,25 @@
 #define VERBOSE_LOG(...) ((void)0)
 #endif
 
-extern "C" thread_local TEB *currentThreadTeb;
+extern __thread TEB *currentThreadTeb;
 
-namespace wibo {
+extern char **wibo_argv;
+extern int wibo_argc;
+// NULL when no guest executable path has been set.
+extern char *wibo_guestExecutablePath;
+extern char *wibo_executableName;
+extern char *wibo_commandLine;
+// NUL-terminated UTF-16 copy of wibo_commandLine.
+extern uint16_t *wibo_commandLineW;
+extern bool wibo_debugEnabled;
+extern unsigned int wibo_debugIndent;
+extern int wibo_tibEntryNumber;
+extern PEB *wibo_processPeb;
 
-extern char **argv;
-extern int argc;
-extern std::filesystem::path guestExecutablePath;
-extern std::string executableName;
-extern std::string commandLine;
-extern std::vector<uint16_t> commandLineW;
-extern bool debugEnabled;
-extern unsigned int debugIndent;
-extern int tibEntryNumber;
-extern PEB *processPeb;
+TEB *wibo_allocateTib(void);
+void wibo_destroyTib(TEB *tib);
+void wibo_initializeTibStackInfo(TEB *tib);
+bool wibo_installTibForCurrentThread(TEB *tib);
+void wibo_uninstallTebForCurrentThread(void);
 
-TEB *allocateTib();
-void destroyTib(TEB *tib);
-void initializeTibStackInfo(TEB *tib);
-bool installTibForCurrentThread(TEB *tib);
-void uninstallTebForCurrentThread();
-
-void debug_log(const char *fmt, ...);
-
-} // namespace wibo
+void wibo_debug_log(const char *fmt, ...);

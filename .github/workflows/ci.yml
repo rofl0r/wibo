@@ -107,11 +107,6 @@ jobs:
           target: build
           platforms: ${{ matrix.platform || 'linux/amd64' }}
 
-      - name: Tests
-        run: >
-          docker run --rm ${{ steps.docker-build.outputs.imageid }}
-          ctest --test-dir /wibo/build --output-on-failure
-
       - name: Export binary
         uses: docker/build-push-action@v6
         with:
@@ -159,17 +154,18 @@ jobs:
           - id: macos-debug
             os: macos-latest
             display: Debug
-            preset: debug-macos
-            build_dir: debug
+            config: debug
+            lto: 0
           - id: macos-release
             os: macos-latest
             display: Release
-            preset: release-macos
-            build_dir: release
+            config: release
+            lto: 1
           # For testing only
           - os: macos-15-intel
             display: Release (Intel)
-            preset: release-macos
+            config: release
+            lto: 1
     steps:
       - name: Install dependencies
         run: |
@@ -181,19 +177,17 @@ jobs:
           fetch-depth: 0
 
       - name: Build wibo
-        run: |
-          cmake --preset ${{ matrix.preset }}
-          cmake --build --preset ${{ matrix.preset }}
+        run: make CONFIG=${{ matrix.config }} LTO=${{ matrix.lto }}
 
       - name: Tests
-        run: ctest --preset ${{ matrix.preset }}
+        run: make CONFIG=${{ matrix.config }} LTO=${{ matrix.lto }} test
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         if: ${{ matrix.id }}
         with:
           name: ${{ matrix.id }}
-          path: build/${{ matrix.build_dir }}/wibo
+          path: build/${{ matrix.config }}/wibo
 
   release:
     name: Publish Release
