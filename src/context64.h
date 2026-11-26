@@ -141,6 +141,8 @@ typedef struct {
 	uint32_t Fill0;
 } WiboDispatcherContext;
 
+#if UINTPTR_MAX == UINT64_MAX
 _Static_assert(sizeof(WiboDispatcherContext) == 0x50, "DISPATCHER_CONTEXT size");
 _Static_assert(offsetof(WiboDispatcherContext, ContextRecord) == 0x28, "DISPATCHER_CONTEXT ContextRecord offset");
 _Static_assert(offsetof(WiboDispatcherContext, ScopeIndex) == 0x48, "DISPATCHER_CONTEXT ScopeIndex offset");
+#endif
