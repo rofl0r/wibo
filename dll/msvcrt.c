@@ -1438,6 +1438,76 @@ int CDECL msvcrt_getenv_s(SIZE_T *retLen, LPSTR buffer, SIZE_T len, LPCSTR name)
 	return rc;
 }
 
+// Guest-visible _wgetenv results, one per name. A copy is replaced only when
+// the converted host value changes; the previous copy is freed then, so a
+// pointer from before a change is no longer valid.
+typedef struct GuestWEnvNode {
+	struct GuestWEnvNode *next;
+	char *name;
+	WCHAR *value;
+} GuestWEnvNode;
+
+static GuestWEnvNode *g_guestWEnv;
+
+// Caller holds g_guestStringMutex.
+static WCHAR *guestWEnvValue(const char *name) {
+	const char *host = getenv(name);
+	if (!host) {
+		return NULL;
+	}
+	uint16_t *wide = stringToWideString(host, SIZE_MAX);
+	size_t units = wstrlen(wide) + 1;
+	GuestWEnvNode *node = NULL;
+	for (GuestWEnvNode *n = g_guestWEnv; n; n = n->next) {
+		if (strcmp(n->name, name) == 0) {
+			node = n;
+			break;
+		}
+	}
+	if (!node) {
+		node = calloc(1, sizeof *node);
+		if (node) {
+			size_t nameLen = strlen(name) + 1;
+			node->name = malloc(nameLen);
+			if (node->name) {
+				memcpy(node->name, name, nameLen);
+				node->next = g_guestWEnv;
+				g_guestWEnv = node;
+			} else {
+				free(node);
+				node = NULL;
+			}
+		}
+	}
+	if (node && (!node->value || wstrlen(node->value) + 1 != units ||
+				 memcmp(node->value, wide, units * sizeof(uint16_t)) != 0)) {
+		WCHAR *copy = guestAlloc(units * sizeof(WCHAR));
+		if (copy) {
+			memcpy(copy, wide, units * sizeof(uint16_t));
+			if (node->value) {
+				guestFree(node->value);
+			}
+			node->value = copy;
+		}
+	}
+	free(wide);
+	return node ? node->value : NULL;
+}
+
+LPWSTR CDECL msvcrt__wgetenv(LPCWSTR name) {
+	HOST_CONTEXT_GUARD();
+	if (!name) {
+		errno = EINVAL;
+		return NULL;
+	}
+	char *narrowName = wideStringToString(name, -1);
+	pthread_mutex_lock(&g_guestStringMutex);
+	WCHAR *value = guestWEnvValue(narrowName);
+	pthread_mutex_unlock(&g_guestStringMutex);
+	free(narrowName);
+	return value;
+}
+
 // Sizes and the buffer are in UTF-16 units. The value is converted the same
 // way as the other wide strings in this file: one byte per unit.
 int CDECL msvcrt__wgetenv_s(SIZE_T *retLen, LPWSTR buffer, SIZE_T len, LPCWSTR name) {
