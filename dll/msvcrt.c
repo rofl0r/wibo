@@ -1351,8 +1351,7 @@ LPSTR CDECL msvcrt_getenv(LPCSTR name) {
 
 // Like the MS CRT, an empty value removes the variable. The host environment is
 // the only store, so getenv and kernel32 environment calls see the change.
-int CDECL msvcrt__putenv(LPCSTR envstring) {
-	HOST_CONTEXT_GUARD();
+static int putenvImpl(const char *envstring) {
 	const char *eq = envstring ? strchr(envstring, '=') : NULL;
 	if (!eq || eq == envstring) {
 		errno = EINVAL;
@@ -1371,6 +1370,23 @@ int CDECL msvcrt__putenv(LPCSTR envstring) {
 	pthread_mutex_unlock(&g_guestStringMutex);
 	free(name);
 	return rc == 0 ? 0 : -1;
+}
+
+int CDECL msvcrt__putenv(LPCSTR envstring) {
+	HOST_CONTEXT_GUARD();
+	return putenvImpl(envstring);
+}
+
+int CDECL msvcrt__wputenv(LPCWSTR envstring) {
+	HOST_CONTEXT_GUARD();
+	if (!envstring) {
+		errno = EINVAL;
+		return -1;
+	}
+	char *narrow = wideStringToString(envstring, -1);
+	int rc = putenvImpl(narrow);
+	free(narrow);
+	return rc;
 }
 
 // Unlike _putenv, the name and value are separate arguments, so an empty value
