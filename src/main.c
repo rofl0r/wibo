@@ -1,5 +1,5 @@
-#include "common.h"
 #include "bundle.h"
+#include "common.h"
 #include "entry.h"
 #include "entry_trampolines.h"
 #include "files.h"
@@ -47,7 +47,7 @@ void wibo_debug_log(const char *fmt, ...) {
 }
 
 TEB *wibo_allocateTib(void) {
-	TEB *newTib = wibo_heap_guestMalloc(sizeof(TEB), true);
+	TEB *newTib = wibo_heap_guestMalloc(sizeof(TEB));
 	if (!newTib) {
 		return NULL;
 	}
@@ -397,11 +397,11 @@ int main(int argc, char **argv) {
 	files_init();
 
 	// Create PEB
-	PEB *peb = wibo_heap_guestMalloc(sizeof(PEB), true);
-	peb->ProcessParameters = toGuestPtr(wibo_heap_guestMalloc(sizeof(RTL_USER_PROCESS_PARAMETERS), true));
+	PEB *peb = wibo_heap_guestMalloc(sizeof(PEB));
+	peb->ProcessParameters = toGuestPtr(wibo_heap_guestMalloc(sizeof(RTL_USER_PROCESS_PARAMETERS)));
 
 	// Create TIB
-	TEB *tib = wibo_heap_guestMalloc(sizeof(TEB), true);
+	TEB *tib = wibo_heap_guestMalloc(sizeof(TEB));
 	wibo_tls_initializeTib(tib);
 	tib->Tib.Self = toGuestPtr(tib);
 	tib->Peb = toGuestPtr(peb);

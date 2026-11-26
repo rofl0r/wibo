@@ -358,7 +358,7 @@ BOOL WINAPI EnumSystemLocalesA(LOCALE_ENUMPROCA lpLocaleEnumProc, DWORD dwFlags)
 		return FALSE;
 	}
 	static const char kDefaultLocaleId[] = "00000409"; // en-US
-	char *localeId = wibo_heap_guestMalloc(sizeof(kDefaultLocaleId), false);
+	char *localeId = wibo_heap_guestMalloc(sizeof(kDefaultLocaleId));
 	if (!localeId) {
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);
 		return FALSE;

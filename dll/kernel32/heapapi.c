@@ -48,10 +48,8 @@ static LPVOID heapAllocFromRecord(HeapObject *record, DWORD dwFlags, SIZE_T dwBy
 		kernel32_setLastError(ERROR_INVALID_PARAMETER);
 		return NULL;
 	}
-	const bool zeroMemory = (dwFlags & HEAP_ZERO_MEMORY) != 0;
 	const SIZE_T requestSize = dwBytes > 0 ? dwBytes : 1;
-	void *mem = record->heap ? Heap_malloc(record->heap, requestSize, zeroMemory)
-							 : wibo_heap_guestMalloc(requestSize, zeroMemory);
+	void *mem = record->heap ? Heap_malloc(record->heap, requestSize) : wibo_heap_guestMalloc(requestSize);
 	if (!mem) {
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);
 		return NULL;
@@ -96,7 +94,6 @@ static LPVOID heapReAllocFromRecord(HeapObject *record, DWORD dwFlags, LPVOID lp
 		return NULL;
 	}
 	const bool inplaceOnly = (dwFlags & HEAP_REALLOC_IN_PLACE_ONLY) != 0;
-	const bool zeroMemory = (dwFlags & HEAP_ZERO_MEMORY) != 0;
 	if (dwBytes == 0) {
 		if (!inplaceOnly) {
 			wibo_heap_guestFree(lpMem);
@@ -120,8 +117,8 @@ static LPVOID heapReAllocFromRecord(HeapObject *record, DWORD dwFlags, LPVOID lp
 		return lpMem;
 	}
 
-	void *ret = record->heap ? Heap_realloc(record->heap, lpMem, requestSize, zeroMemory)
-							 : wibo_heap_guestRealloc(lpMem, requestSize, zeroMemory);
+	void *ret =
+		record->heap ? Heap_realloc(record->heap, lpMem, requestSize) : wibo_heap_guestRealloc(lpMem, requestSize);
 	if (isExecutableHeap(record)) {
 		kernel32_tryMarkExecutable(ret);
 	}

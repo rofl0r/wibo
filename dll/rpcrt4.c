@@ -177,7 +177,7 @@ RPC_STATUS WINAPI RpcStringBindingComposeW(RPC_WSTR objUuid, RPC_WSTR protSeq, R
 	RPC_STATUS status = RPC_S_OK;
 	if (stringBinding) {
 		size_t length = encoded.len;
-		uint16_t *buffer = wibo_heap_guestMalloc((length + 1) * sizeof(uint16_t), false);
+		uint16_t *buffer = wibo_heap_guestMalloc((length + 1) * sizeof(uint16_t));
 		if (!buffer) {
 			status = RPC_S_OUT_OF_MEMORY;
 			goto done;
@@ -220,7 +220,7 @@ RPC_STATUS WINAPI RpcBindingFromStringBindingW(RPC_WSTR stringBinding, GUEST_PTR
 		return RPC_S_INVALID_STRING_BINDING;
 	}
 	BindingComponents *storedComponents = storedValue;
-	BindingHandleData *handleData = wibo_heap_guestMalloc(sizeof *handleData, true);
+	BindingHandleData *handleData = wibo_heap_guestMalloc(sizeof *handleData);
 	if (!handleData) {
 		return RPC_S_OUT_OF_MEMORY;
 	}

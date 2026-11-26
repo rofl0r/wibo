@@ -57,7 +57,7 @@ static TlsArray *allocateTlsArray(size_t capacity) {
 		return NULL;
 	}
 	const size_t bytes = sizeof(TlsArray) + capacity * sizeof(GUEST_PTR);
-	TlsArray *arr = wibo_heap_guestMalloc(bytes, true);
+	TlsArray *arr = wibo_heap_guestMalloc(bytes);
 	if (!arr) {
 		return NULL;
 	}

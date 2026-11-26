@@ -421,7 +421,7 @@ static void runOnexitTable(void) {
 
 void *CDECL msvcrt_malloc(SIZE_T size) {
 	HOST_CONTEXT_GUARD();
-	return malloc(size);
+	return calloc(1, size);
 }
 
 void *CDECL msvcrt_calloc(SIZE_T count, SIZE_T size) {

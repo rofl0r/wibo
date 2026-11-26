@@ -25,12 +25,13 @@ uintptr_t wibo_heap_allocationGranularity(void);
 
 Heap *Heap_create(void);
 void Heap_destroy(Heap *heap);
-void *Heap_malloc(Heap *heap, size_t size, bool zero);
-void *Heap_realloc(Heap *heap, void *ptr, size_t newSize, bool zero);
+// Allocations are zero-filled.
+void *Heap_malloc(Heap *heap, size_t size);
+void *Heap_realloc(Heap *heap, void *ptr, size_t newSize);
 bool Heap_free(Heap *heap, void *ptr);
 
-void *wibo_heap_guestMalloc(size_t size, bool zero);
-void *wibo_heap_guestRealloc(void *ptr, size_t newSize, bool zero);
+void *wibo_heap_guestMalloc(size_t size);
+void *wibo_heap_guestRealloc(void *ptr, size_t newSize);
 bool wibo_heap_guestFree(void *ptr);
 // Usable size of a block from wibo_heap_guestMalloc or a virtual allocation base; SIZE_MAX if ptr is not one.
 size_t wibo_heap_guestSize(const void *ptr);

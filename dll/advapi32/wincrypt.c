@@ -115,7 +115,7 @@ BOOL WINAPI CryptCreateHash(HCRYPTPROV hProv, ALG_ID Algid, HCRYPTKEY hKey, DWOR
 		kernel32_setLastError(ERROR_NOT_SUPPORTED);
 		return FALSE;
 	}
-	HashObject *hash = wibo_heap_guestMalloc(sizeof(HashObject), true);
+	HashObject *hash = wibo_heap_guestMalloc(sizeof(HashObject));
 	if (!hash) {
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);
 		return FALSE;

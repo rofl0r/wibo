@@ -138,7 +138,7 @@ GUEST_PTR WINAPI GetCommandLineA() {
 	DEBUG_LOG("GetCommandLineA() -> %s\n", wibo_commandLine);
 	if (g_commandLineA == GUEST_NULL) {
 		const size_t len = strlen(wibo_commandLine);
-		void *tmp = wibo_heap_guestMalloc(len + 1, true);
+		void *tmp = wibo_heap_guestMalloc(len + 1);
 		memcpy(tmp, wibo_commandLine, len);
 		g_commandLineA = toGuestPtr(tmp);
 	}
@@ -152,7 +152,7 @@ GUEST_PTR WINAPI GetCommandLineW() {
 	free(commandLineA);
 	if (g_commandLineW == GUEST_NULL) {
 		const size_t len = wstrlen(wibo_commandLineW);
-		void *tmp = wibo_heap_guestMalloc((len + 1) * sizeof(WCHAR), true);
+		void *tmp = wibo_heap_guestMalloc((len + 1) * sizeof(WCHAR));
 		memcpy(tmp, wibo_commandLineW, (len + 1) * sizeof(WCHAR));
 		g_commandLineW = toGuestPtr(tmp);
 	}
@@ -181,7 +181,7 @@ GUEST_PTR WINAPI GetEnvironmentStringsA() {
 	Buf strings = {0};
 	const size_t bufSize = prepareEnvStrings(&strings);
 
-	char *buffer = wibo_heap_guestMalloc(bufSize, false);
+	char *buffer = wibo_heap_guestMalloc(bufSize);
 	if (!buffer) {
 		Buf_free(&strings);
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -200,7 +200,7 @@ GUEST_PTR WINAPI GetEnvironmentStringsW() {
 	Buf strings = {0};
 	const size_t bufSizeW = prepareEnvStrings(&strings);
 
-	uint16_t *buffer = wibo_heap_guestMalloc(bufSizeW * sizeof(uint16_t), false);
+	uint16_t *buffer = wibo_heap_guestMalloc(bufSizeW * sizeof(uint16_t));
 	if (!buffer) {
 		Buf_free(&strings);
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);

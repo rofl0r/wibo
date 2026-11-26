@@ -1223,7 +1223,8 @@ static void freeBlockLocked(BlockHeader *block) {
 	*freeList = block;
 }
 
-static void *allocInSubLocked(SubHeap *sub, size_t size, bool zero) {
+// Every returned region is zero-filled, matching the fresh pages Wine hands out.
+static void *allocInSubLocked(SubHeap *sub, size_t size) {
 	if (size >= LARGE_ALLOC_THRESHOLD) {
 		return NULL;
 	}
@@ -1236,23 +1237,21 @@ static void *allocInSubLocked(SubHeap *sub, size_t size, bool zero) {
 	block->shift = shift;
 	liveInsertLocked(sub, block);
 	void *ptr = payloadOf(block);
-	if (zero) {
-		memset(ptr, 0, size);
-	}
+	memset(ptr, 0, size);
 	return ptr;
 }
 
-static void *reallocInSubLocked(SubHeap *sub, void *ptr, size_t newSize, bool zero) {
+static void *reallocInSubLocked(SubHeap *sub, void *ptr, size_t newSize) {
 	BlockHeader *block = headerOf(ptr);
 	size_t oldSize = block->size;
 	if (newSize <= blockCapacity(block->shift)) {
 		block->size = newSize;
-		if (zero && newSize > oldSize) {
+		if (newSize > oldSize) {
 			memset((char *)ptr + oldSize, 0, newSize - oldSize);
 		}
 		return ptr;
 	}
-	void *newPtr = allocInSubLocked(sub, newSize, zero);
+	void *newPtr = allocInSubLocked(sub, newSize);
 	if (!newPtr) {
 		return NULL;
 	}
@@ -1330,20 +1329,19 @@ static SubHeap *heapForArena(HeapVec *heaps, uint32_t arenaIdx, uint32_t heapTag
 typedef struct {
 	void *ptr;
 	size_t size;
-	bool zero;
 } HeapOp;
 typedef void *(*HeapOpFn)(SubHeap *sub, const HeapOp *op);
 
 static void *heapOpAlloc(SubHeap *sub, const HeapOp *op) {
 	arenasLock();
-	void *ptr = allocInSubLocked(sub, op->size, op->zero);
+	void *ptr = allocInSubLocked(sub, op->size);
 	arenasUnlock();
 	return ptr;
 }
 
 static void *heapOpRealloc(SubHeap *sub, const HeapOp *op) {
 	arenasLock();
-	void *ptr = reallocInSubLocked(sub, op->ptr, op->size, op->zero);
+	void *ptr = reallocInSubLocked(sub, op->ptr, op->size);
 	arenasUnlock();
 	return ptr;
 }
@@ -1397,7 +1395,7 @@ static void *tryWithAnyArena(HeapInternal *internal, HeapOpFn fn, const HeapOp *
 	return NULL;
 }
 
-static void *doAlloc(HeapInternal *internal, size_t size, bool zero) {
+static void *doAlloc(HeapInternal *internal, size_t size) {
 	if (size >= LARGE_ALLOC_THRESHOLD) {
 		DEBUG_LOG("heap: large malloc %zu bytes, using virtualAlloc\n", size);
 		void *addr = NULL;
@@ -1407,11 +1405,11 @@ static void *doAlloc(HeapInternal *internal, size_t size, bool zero) {
 		}
 		return addr;
 	}
-	const HeapOp op = {.ptr = NULL, .size = size, .zero = zero};
+	const HeapOp op = {.ptr = NULL, .size = size};
 	return tryWithAnyArena(internal, heapOpAlloc, &op);
 }
 
-static void *doRealloc(HeapInternal *internal, void *ptr, size_t newSize, bool zero) {
+static void *doRealloc(HeapInternal *internal, void *ptr, size_t newSize) {
 	bool isInHeap = isInHeapRegion(ptr);
 	if (newSize >= LARGE_ALLOC_THRESHOLD || !isInHeap) {
 		DEBUG_LOG("heap: large realloc %zu bytes, using virtualAlloc\n", newSize);
@@ -1433,7 +1431,7 @@ static void *doRealloc(HeapInternal *internal, void *ptr, size_t newSize, bool z
 				return NULL;
 			}
 		} else {
-			ret = doAlloc(internal, newSize, zero);
+			ret = doAlloc(internal, newSize);
 		}
 		if (!ret) {
 			return NULL;
@@ -1447,7 +1445,7 @@ static void *doRealloc(HeapInternal *internal, void *ptr, size_t newSize, bool z
 		}
 		return ret;
 	}
-	const HeapOp op = {.ptr = ptr, .size = newSize, .zero = zero};
+	const HeapOp op = {.ptr = ptr, .size = newSize};
 	return tryWithAnyArena(internal, heapOpRealloc, &op);
 }
 
@@ -1499,20 +1497,20 @@ void Heap_destroy(Heap *heap) {
 	free(heap);
 }
 
-void *Heap_malloc(Heap *heap, size_t size, bool zero) {
+void *Heap_malloc(Heap *heap, size_t size) {
 	if (wibo_getThreadId() != heap->threadId) {
 		DEBUG_LOG("heap: malloc(%zu) failed; heap owned by another thread\n", size);
 		return NULL;
 	}
-	return doAlloc(&heap->internal, size, zero);
+	return doAlloc(&heap->internal, size);
 }
 
-void *Heap_realloc(Heap *heap, void *ptr, size_t newSize, bool zero) {
+void *Heap_realloc(Heap *heap, void *ptr, size_t newSize) {
 	if (wibo_getThreadId() != heap->threadId) {
 		DEBUG_LOG("heap: realloc(%p, %zu) failed; heap owned by another thread\n", ptr, newSize);
 		return NULL;
 	}
-	return doRealloc(&heap->internal, ptr, newSize, zero);
+	return doRealloc(&heap->internal, ptr, newSize);
 }
 
 // Matches the C++ original: freeing does not check the owning thread.
@@ -1521,11 +1519,9 @@ bool Heap_free(Heap *heap, void *ptr) {
 	return doFree(ptr);
 }
 
-void *wibo_heap_guestMalloc(size_t size, bool zero) { return doAlloc(&g_guestHeap, size, zero); }
+void *wibo_heap_guestMalloc(size_t size) { return doAlloc(&g_guestHeap, size); }
 
-void *wibo_heap_guestRealloc(void *ptr, size_t newSize, bool zero) {
-	return doRealloc(&g_guestHeap, ptr, newSize, zero);
-}
+void *wibo_heap_guestRealloc(void *ptr, size_t newSize) { return doRealloc(&g_guestHeap, ptr, newSize); }
 
 bool wibo_heap_guestFree(void *ptr) { return doFree(ptr); }
 

@@ -400,7 +400,7 @@ static pthread_once_t g_defaultActCtxOnce = PTHREAD_ONCE_INIT;
 
 static ActivationContext *currentActivationContext(void) {
 	if (!g_builtinActCtx) {
-		g_builtinActCtx = wibo_heap_guestMalloc(sizeof *g_builtinActCtx, true);
+		g_builtinActCtx = wibo_heap_guestMalloc(sizeof *g_builtinActCtx);
 	}
 	return g_builtinActCtx;
 }
@@ -416,7 +416,7 @@ static void addDefaultActivationDll(ActivationContext *ctx, const char *name) {
 
 	DllRedirectionEntry entry;
 	entry.nameLower = lowerName;
-	entry.dllData = wibo_heap_guestMalloc(sizeof(ACTIVATION_CONTEXT_DATA_DLL_REDIRECTION), true);
+	entry.dllData = wibo_heap_guestMalloc(sizeof(ACTIVATION_CONTEXT_DATA_DLL_REDIRECTION));
 	entry.dllData->Size = sizeof(ACTIVATION_CONTEXT_DATA_DLL_REDIRECTION);
 	entry.dllData->Flags = ACTIVATION_CONTEXT_DATA_DLL_REDIRECTION_PATH_OMITS_ASSEMBLY_ROOT;
 	entry.dllData->TotalPathLength = 0;
@@ -923,8 +923,7 @@ HGLOBAL WINAPI GlobalAlloc(UINT uFlags, SIZE_T dwBytes) {
 		assert(0);
 		return GUEST_NULL;
 	}
-	bool zero = (uFlags & GMEM_ZEROINIT) != 0;
-	void *ret = wibo_heap_guestMalloc((UINT)dwBytes, zero);
+	void *ret = wibo_heap_guestMalloc((UINT)dwBytes);
 	VERBOSE_LOG("-> %p\n", ret);
 	if (!ret) {
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -952,8 +951,7 @@ HGLOBAL WINAPI GlobalReAlloc(HGLOBAL hMem, SIZE_T dwBytes, UINT uFlags) {
 		assert(0);
 		return GUEST_NULL;
 	}
-	bool zero = (uFlags & GMEM_ZEROINIT) != 0;
-	void *ret = wibo_heap_guestRealloc(fromGuestPtr(hMem), (UINT)dwBytes, zero);
+	void *ret = wibo_heap_guestRealloc(fromGuestPtr(hMem), (UINT)dwBytes);
 	VERBOSE_LOG("-> %p\n", ret);
 	if (!ret) {
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -1020,11 +1018,10 @@ void WINAPI GlobalMemoryStatus(LPMEMORYSTATUS lpBuffer) {
 HLOCAL WINAPI LocalAlloc(UINT uFlags, SIZE_T uBytes) {
 	HOST_CONTEXT_GUARD();
 	VERBOSE_LOG("LocalAlloc(%x, %zu)\n", uFlags, (size_t)uBytes);
-	bool zero = (uFlags & LMEM_ZEROINIT) != 0;
 	if ((uFlags & LMEM_MOVEABLE) != 0) {
 		VERBOSE_LOG("  ignoring LMEM_MOVEABLE\n");
 	}
-	void *result = wibo_heap_guestMalloc((UINT)uBytes, zero);
+	void *result = wibo_heap_guestMalloc((UINT)uBytes);
 	if (!result) {
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);
 		return GUEST_NULL;
@@ -1051,11 +1048,10 @@ HLOCAL WINAPI LocalFree(HLOCAL hMem) {
 HLOCAL WINAPI LocalReAlloc(HLOCAL hMem, SIZE_T uBytes, UINT uFlags) {
 	HOST_CONTEXT_GUARD();
 	VERBOSE_LOG("LocalReAlloc(%p, %zu, %x)\n", (void *)(uintptr_t)hMem, (size_t)uBytes, uFlags);
-	bool zero = (uFlags & LMEM_ZEROINIT) != 0;
 	if ((uFlags & LMEM_MOVEABLE) != 0) {
 		VERBOSE_LOG("  ignoring LMEM_MOVEABLE\n");
 	}
-	void *result = wibo_heap_guestRealloc(fromGuestPtr(hMem), (UINT)uBytes, zero);
+	void *result = wibo_heap_guestRealloc(fromGuestPtr(hMem), (UINT)uBytes);
 	if (!result && uBytes != 0) {
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);
 		return GUEST_NULL;

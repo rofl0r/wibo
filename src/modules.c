@@ -1046,7 +1046,7 @@ static bool allocateModuleTlsForThread(ModuleInfo *module, TEB *tib) {
 	GUEST_PTR block = GUEST_NULL;
 	const size_t allocationSize = info->allocationSize;
 	if (allocationSize > 0) {
-		void *ptr = wibo_heap_guestMalloc(allocationSize, false);
+		void *ptr = wibo_heap_guestMalloc(allocationSize);
 		if (!ptr) {
 			DEBUG_LOG("  allocateModuleTlsForThread: failed to allocate %zu bytes for %s\n", allocationSize,
 					  module->originalName);

@@ -732,7 +732,7 @@ BOOL WINAPI InitializeCriticalSectionEx(LPCRITICAL_SECTION lpCriticalSection, DW
 	if (Flags & RTL_CRITICAL_SECTION_FLAG_NO_DEBUG_INFO) {
 		lpCriticalSection->DebugInfo = (GUEST_PTR)-1;
 	} else {
-		RTL_CRITICAL_SECTION_DEBUG *debugInfo = wibo_heap_guestMalloc(sizeof(RTL_CRITICAL_SECTION_DEBUG), true);
+		RTL_CRITICAL_SECTION_DEBUG *debugInfo = wibo_heap_guestMalloc(sizeof(RTL_CRITICAL_SECTION_DEBUG));
 		debugInfo->CriticalSection = toGuestPtr(lpCriticalSection);
 		debugInfo->ProcessLocksList.Blink = toGuestPtr(&debugInfo->ProcessLocksList);
 		debugInfo->ProcessLocksList.Flink = toGuestPtr(&debugInfo->ProcessLocksList);
@@ -862,7 +862,7 @@ BOOL WINAPI InitOnceExecuteOnce(PINIT_ONCE lpInitOnce, PINIT_ONCE_FN lpInitFn, L
 		return TRUE;
 	}
 	// The callback writes its context through a pointer, which must be visible to the guest.
-	GUEST_PTR *slot = wibo_heap_guestMalloc(sizeof(GUEST_PTR), false);
+	GUEST_PTR *slot = wibo_heap_guestMalloc(sizeof(GUEST_PTR));
 	if (!slot) {
 		InitOnceComplete(lpInitOnce, INIT_ONCE_INIT_FAILED, NULL);
 		kernel32_setLastError(ERROR_NOT_ENOUGH_MEMORY);

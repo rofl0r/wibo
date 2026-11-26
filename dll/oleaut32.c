@@ -18,7 +18,7 @@ GUEST_PTR WINAPI SysAllocString(LPCWSTR psz) {
 	while (psz[len]) {
 		++len;
 	}
-	uint8_t *block = (uint8_t *)wibo_heap_guestMalloc(4 + (len + 1) * sizeof(uint16_t), false);
+	uint8_t *block = (uint8_t *)wibo_heap_guestMalloc(4 + (len + 1) * sizeof(uint16_t));
 	if (!block) {
 		return GUEST_NULL;
 	}
