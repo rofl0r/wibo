@@ -1411,6 +1411,16 @@ static void emitThunk32(Buf *o, const Sig *f, int h2g) {
     if (align > 0)
         bline(o, "\tand esp, ~%ld", align - 1);
 
+    /* Publish the guest's errno before the shim runs. eax holds the source argument pointer, so it is
+     * saved around the hook. esp is 16-byte aligned here, so the pad keeps the call site aligned. */
+    if (!h2g) {
+        bline(o, "\tpush eax");
+        bline(o, "\tsub esp, 12");
+        bline(o, "\tcall wibo_errnoGuestToHost");
+        bline(o, "\tadd esp, 12");
+        bline(o, "\tpop eax");
+    }
+
     for (int i = 0; i < f->nargs; i++) {
         const Place *t = &tgt.places[i];
         if (!t->onStack)
@@ -1439,6 +1449,18 @@ static void emitThunk32(Buf *o, const Sig *f, int h2g) {
     }
 
     bline(o, "\tcall %s", callTarget);
+
+    /* The hook may clobber eax, edx and ecx. ecx is reloaded from the TEB below, so only the return value
+     * needs saving. */
+    if (!h2g) {
+        bline(o, "\tpush eax");
+        bline(o, "\tpush edx");
+        bline(o, "\tsub esp, 8");
+        bline(o, "\tcall wibo_errnoHostToGuest");
+        bline(o, "\tadd esp, 8");
+        bline(o, "\tpop edx");
+        bline(o, "\tpop eax");
+    }
 
     long retSize = retSizeOrDie(f);
     if (retSize > 8)
