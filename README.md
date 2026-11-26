@@ -117,8 +117,8 @@ build/tools/wibo-bundle -o app64 --stub ./wibo64 prog64.exe lib64.dll
 Or embed the payload into a new wibo build (Linux only):
 
 ```sh
-make bundle WIBO_BUNDLE_FILES="prog.exe lib.dll"               # -> build/wibo32/wibo-bundled
-make WIN64=1 bundle WIBO_BUNDLE_FILES="prog64.exe lib64.dll"   # -> build/wibo64/wibo-bundled
+make bundle WIBO_BUNDLE_FILES="prog.exe lib.dll"               # -> ./wibo32-bundled
+make WIN64=1 bundle WIBO_BUNDLE_FILES="prog64.exe lib64.dll"   # -> ./wibo64-bundled
 ```
 
 Notes:

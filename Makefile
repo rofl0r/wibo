@@ -8,7 +8,7 @@
 #   make test [TEST=name]       build the fixtures for the selected runtime and run them under wibo
 #   make WIN64=1 test           run the Win64 fixtures under ./wibo64
 #   make bundle WIBO_BUNDLE_FILES="app.exe lib.dll"
-#                               build build/wibo32/wibo-bundled with the files linked in (Linux)
+#                               build ./wibo32-bundled with the files linked in (Linux)
 #   build/tools/wibo-bundle -o app --stub ./wibo32 app.exe lib.dll
 #                               write a standalone executable (any host with a plain wibo)
 #
@@ -88,7 +88,7 @@ WIBO := $(CURDIR)/$(WIBO_NAME)
 TOOLS_DIR := $(BUILD_ROOT)/tools
 GENTRAMP := $(TOOLS_DIR)/gentramp
 WIBO_BUNDLE_TOOL := $(TOOLS_DIR)/wibo-bundle
-WIBO_BUNDLED := $(BUILD_DIR)/wibo-bundled
+WIBO_BUNDLED := $(CURDIR)/$(WIBO_NAME)-bundled
 
 # Override with TARGET_ARCH_FLAGS= when CC already selects the 32-bit target (e.g. clang --target=i586-...).
 TARGET_ARCH_FLAGS ?= $(if $(filter i686,$(ARCH)),-m32)
@@ -498,10 +498,10 @@ $(BUILD_DIR) $(GEN_DIR) $(TEST_BIN_DIR) $(TOOLS_DIR) $(VENDOR_DIR):
 	@mkdir -p $@
 
 clean:
-	rm -rf $(BUILD_DIR) wibo32 wibo64
+	rm -rf $(BUILD_DIR) wibo32 wibo64 wibo32-bundled wibo64-bundled
 
 distclean:
-	rm -rf $(BUILD_ROOT) wibo32 wibo64
+	rm -rf $(BUILD_ROOT) wibo32 wibo64 wibo32-bundled wibo64-bundled
 
 FORCE:
 
