@@ -37,7 +37,7 @@ Build variables (pass on the command line, e.g. `make DEBUG=1 wibo64`):
 | `WIN64`                   | `0`                    | `1` selects the 64-bit loader (`wibo64`), used by `make` and `make test`                     |
 | `ARCH`                    | `x86_64` on x86_64 hosts and macOS, else `i686` | `i686` (native 32-bit host build; nothing is added implicitly, so set `CC` to a 32-bit compiler) or `x86_64` (64-bit host running PE32 guests via mode switching). `WIBO_64=1` is shorthand for `ARCH=x86_64` |
 | `CC`                      | `gcc` (`cc` on macOS)  | Target C compiler. `ARCH=i686` requires a 32-bit compiler, e.g. `CC="gcc -m32"` with multilib gcc or a cross compiler such as `i686-linux-gnu-gcc`; the build stops early if it is not 32-bit |
-| `LTO`                     | `0`                    | Set to `1` to build with `-flto`                                                             |
+| `CFLAGS`, `LDFLAGS`       | empty                  | Passed to the wibo compile and link steps, e.g. `make CFLAGS=-flto LDFLAGS=-flto` for link-time optimization. Host tools (`gentramp`, `wibo-bundle`) are not affected |
 | `WIBO_ENABLE_LIBURING`    | `0`                    | Set to `1` to enable the io_uring backend (links system `liburing`)                          |
 | `WIBO_ENABLE_WINE_DLLS`   | `1`                    | Set to `0` to skip embedding the Wine CRT DLLs (see below)                                   |
 | `MINGW_CC`, `MINGW_WINDRES` | `i686-w64-mingw32-gcc`, `i686-w64-mingw32-windres` (`x86_64-w64-mingw32-gcc` when `WIN64=1`) | MinGW tools used to build the test fixtures |

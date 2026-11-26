@@ -21,13 +21,13 @@
 #   CC                     target C compiler (default gcc). ARCH=i686 needs a 32-bit compiler: a 32-bit cross
 #                          compiler or a multilib gcc, e.g. make ARCH=i686 CC="gcc -m32" wibo32. No -m32 is added
 #                          implicitly.
-#   LTO                    1 enables link-time optimization (default 0)
 #   WIBO_VERSION           version string (default: git describe, else "unknown")
 #   WIBO_ENABLE_LIBURING   1 enables the io_uring backend on Linux (default 0)
 #   WIBO_LIBURING_STATIC   1 links liburing statically (default 0)
 #   WIBO_ENABLE_WINE_DLLS  0 disables downloading and embedding the Wine CRT DLLs
 #   MINGW_CC, MINGW_WINDRES  fixture toolchain (default i686-w64-mingw32-*, or x86_64-* when WIN64=1)
 #   TEST_TIMEOUT           seconds allowed per fixture test (default 1500)
+#   CFLAGS, LDFLAGS        passed to the wibo compile and link steps (e.g. CFLAGS=-flto LDFLAGS=-flto)
 #   EXTRA_CFLAGS, EXTRA_LDFLAGS, EXTRA_LIBS  appended to the wibo build flags
 #   WIBO_BUNDLE_FILES      first file is the Win64 program run by the bundle, the rest are its DLLs
 
@@ -64,7 +64,6 @@ ifneq ($(filter-out i686 x86_64,$(ARCH)),)
 $(error ARCH must be i686 or x86_64, got '$(ARCH)')
 endif
 
-LTO ?= 0
 WIBO_ENABLE_LIBURING ?= 0
 WIBO_LIBURING_STATIC ?= 0
 WIBO_ENABLE_WINE_DLLS ?= 1
@@ -107,10 +106,6 @@ ifeq ($(DEBUG),1)
 OPT_FLAGS := -O0 -g3
 else
 OPT_FLAGS := -O3 -DNDEBUG
-endif
-
-ifeq ($(LTO),1)
-LTO_FLAGS := -flto
 endif
 
 # -maccumulate-outgoing-args is GCC-only; CMake applied it only to GNU compilers.
@@ -284,15 +279,16 @@ WIBO_SRCS := $(CORE_SRCS) $(DLL_SRCS) $(EMBED_DLL_SRCS) $(PLATFORM_SRCS) $(URING
 WIBO_OBJS := $(addprefix $(OBJ_DIR)/,$(addsuffix .o,$(WIBO_SRCS))) $(TRAMP_OBJS)
 WIBO_DEPS := $(WIBO_OBJS:.o=.d)
 
-# -std is C-only; the assembler sources reuse the same flags without it. LTO applies only to C compiles and links.
+# -std is C-only; the assembler sources reuse the same flags without it.
 WIN64_DEFS := $(if $(filter 1,$(WIN64)),-DWIBO_GUEST64=1)
-WIBO_COMMON_FLAGS := -Wall -Wextra $(OPT_FLAGS) \
+# User CFLAGS follow OPT_FLAGS so they can override the optimization level.
+WIBO_COMMON_FLAGS := -Wall -Wextra $(OPT_FLAGS) $(CFLAGS) \
 	$(GNU_ONLY_FLAGS) $(WINE_DLL_DEFS) $(GETTID_DEFS) $(WIN64_DEFS) -DWIBO_ENABLE_LIBURING=$(ENABLE_URING) \
 	-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_TIME_BITS=64 \
 	-I dll -I src -I $(GEN_DIR) -MMD -MP $(EXTRA_CFLAGS)
-WIBO_CFLAGS := $(WIBO_COMMON_FLAGS) $(LTO_FLAGS)
+WIBO_CFLAGS := $(WIBO_COMMON_FLAGS)
 WIBO_CSTD := -std=gnu11
-WIBO_LDFLAGS := $(LTO_FLAGS) $(GNU_ONLY_FLAGS) $(PLATFORM_LDFLAGS) $(EXTRA_LDFLAGS)
+WIBO_LDFLAGS := $(GNU_ONLY_FLAGS) $(LDFLAGS) $(PLATFORM_LDFLAGS) $(EXTRA_LDFLAGS)
 WIBO_LIBS := $(PLATFORM_LIBS) $(URING_LIBS) $(EXTRA_LIBS)
 
 # Objects are rebuilt when the compile flags change (e.g. after toggling DEBUG or CC); the stamp only

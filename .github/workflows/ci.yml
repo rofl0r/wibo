@@ -19,26 +19,22 @@ jobs:
             debug: 0
             arch: i686
             cc: gcc -m32
-            lto: 1
             asset: wibo-i686
           - display: Debug (32-bit)
             debug: 1
             arch: i686
             cc: gcc -m32
-            lto: 0
             asset: wibo-i686-debug
           - display: Release (64-bit)
             debug: 0
             arch: x86_64
             cc: gcc
-            lto: 1
             liburing: 1
             asset: wibo-x86_64
           - display: Debug (64-bit)
             debug: 1
             arch: x86_64
             cc: gcc
-            lto: 0
             liburing: 1
             asset: wibo-x86_64-debug
           - display: Release (Win64 runtime)
@@ -46,7 +42,6 @@ jobs:
             arch: x86_64
             cc: gcc
             win64: 1
-            lto: 1
             liburing: 1
             asset: wibo-win64
     env:
@@ -54,7 +49,6 @@ jobs:
       ARCH: ${{ matrix.arch }}
       CC: ${{ matrix.cc }}
       WIN64: ${{ matrix.win64 || 0 }}
-      LTO: ${{ matrix.lto }}
       WIBO_ENABLE_LIBURING: ${{ matrix.liburing || 0 }}
     steps:
       - name: Install dependencies
@@ -106,18 +100,15 @@ jobs:
           - os: macos-latest
             display: Debug
             debug: 1
-            lto: 0
             asset: wibo-macos-debug
           - os: macos-latest
             display: Release
             debug: 0
-            lto: 1
             asset: wibo-macos
           # For testing only
           - os: macos-15-intel
             display: Release (Intel)
             debug: 0
-            lto: 1
     steps:
       - name: Install dependencies
         run: |
@@ -129,10 +120,10 @@ jobs:
           fetch-depth: 0
 
       - name: Build wibo
-        run: make DEBUG=${{ matrix.debug }} LTO=${{ matrix.lto }}
+        run: make DEBUG=${{ matrix.debug }}
 
       - name: Tests
-        run: make DEBUG=${{ matrix.debug }} LTO=${{ matrix.lto }} test
+        run: make DEBUG=${{ matrix.debug }} test
 
       - name: Stage artifact
         if: ${{ matrix.asset }}
