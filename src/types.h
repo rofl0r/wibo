@@ -578,11 +578,6 @@ _Static_assert(offsetof(TEB, CodeSelector) == TEB_CS_SEL, "CS selector offset mi
 #ifdef TEB_DS_SEL
 _Static_assert(offsetof(TEB, DataSelector) == TEB_DS_SEL, "DS selector offset mismatch");
 #endif
-_Static_assert(offsetof(TEB, CurrentStackPointer) == TEB_SP, "Stack pointer offset mismatch");
-_Static_assert(offsetof(TEB, GuestBoundary) == TEB_BOUNDARY, "GuestBoundary offset mismatch");
-#ifdef TEB_GUEST_FRAME
-_Static_assert(offsetof(TEB, GuestCallFrame) == TEB_GUEST_FRAME, "GuestCallFrame offset mismatch");
-#endif
 #ifdef TEB_FSBASE
 _Static_assert(offsetof(TEB, HostFsBase) == TEB_FSBASE, "HostFsBase offset mismatch");
 #endif
@@ -595,6 +590,11 @@ _Static_assert(offsetof(TEB, HasFsGsBase) == TEB_HAS_FSGSBASE, "HasFsGsBase offs
 #ifdef TEB_HOST_CS_SEL
 _Static_assert(offsetof(TEB, HostCodeSelector) == TEB_HOST_CS_SEL, "HostCodeSelector offset mismatch");
 #endif
+_Static_assert(offsetof(TEB, CurrentStackPointer) == TEB_SP, "Stack pointer offset mismatch");
+_Static_assert(offsetof(TEB, GuestBoundary) == TEB_BOUNDARY, "GuestBoundary offset mismatch");
+#endif
+#ifdef TEB_GUEST_FRAME
+_Static_assert(offsetof(TEB, GuestCallFrame) == TEB_GUEST_FRAME, "GuestCallFrame offset mismatch");
 #endif
 
 typedef struct _MEMORY_BASIC_INFORMATION {
