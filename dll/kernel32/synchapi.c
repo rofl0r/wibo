@@ -835,8 +835,14 @@ void WINAPI LeaveCriticalSection(LPCRITICAL_SECTION lpCriticalSection) {
 		return;
 	}
 
-	if (--lpCriticalSection->RecursionCount != 0) {
-		InterlockedDecrement(&lpCriticalSection->LockCount);
+	const LONG recursion = --lpCriticalSection->RecursionCount;
+	if (recursion != 0) {
+		// Matches Wine: a Leave without a matching Enter must not touch LockCount.
+		if (recursion > 0) {
+			InterlockedDecrement(&lpCriticalSection->LockCount);
+		} else {
+			DEBUG_LOG("LeaveCriticalSection(%p): section is not acquired\n", lpCriticalSection);
+		}
 		return;
 	}
 

@@ -29,6 +29,7 @@ extern const ModuleStub lib_bcrypt;
 extern ModuleStub lib_crtdll;
 #endif
 extern const ModuleStub lib_kernel32;
+extern const ModuleStub lib_dbghelp;
 extern const ModuleStub lib_lmgr;
 extern const ModuleStub lib_mscoree;
 #if WIBO_HAS_MSVCRT
@@ -321,6 +322,7 @@ static ModuleRegistry *lockRegistry(void) {
 		const ModuleStub *builtins[] = {
 			&lib_advapi32,
 			&lib_bcrypt,
+			&lib_dbghelp,
 			&lib_kernel32,
 			&lib_lmgr,
 			&lib_mscoree,

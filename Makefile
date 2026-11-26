@@ -181,6 +181,7 @@ DLL_SRCS := \
 	dll/advapi32/md5.c \
 	$(addprefix dll/advapi32/,$(addsuffix .c,$(ADVAPI32_NAMES))) \
 	dll/bcrypt.c \
+	dll/dbghelp.c \
 	dll/kernel32.c \
 	$(addprefix dll/kernel32/,$(addsuffix .c,$(KERNEL32_NAMES))) \
 	dll/lmgr.c \
@@ -228,7 +229,7 @@ ifeq ($(WIN64),1)
 DLL_SRCS += dll/msvcrt64.c
 endif
 
-ALL_TRAMP_MODULES := advapi32 bcrypt entry mscoree version rpcrt4 shlwapi ws2 vcruntime lmgr \
+ALL_TRAMP_MODULES := advapi32 bcrypt dbghelp entry mscoree version rpcrt4 shlwapi ws2 vcruntime lmgr \
 	ole32 oleaut32 user32 ntdll kernel32
 ifeq ($(WIN64),1)
 ALL_TRAMP_MODULES += msvcrt
@@ -242,6 +243,7 @@ TRAMP_ARCH_ARGS := --arch $(GENTRAMP_ARCH)
 endif
 TRAMP_HDRS_advapi32 := $(addprefix dll/advapi32/,$(addsuffix .h,$(ADVAPI32_NAMES)))
 TRAMP_HDRS_bcrypt := dll/bcrypt.h
+TRAMP_HDRS_dbghelp := dll/dbghelp.h
 TRAMP_HDRS_entry := src/entry.h
 TRAMP_HDRS_mscoree := dll/mscoree.h
 TRAMP_HDRS_version := dll/version.h

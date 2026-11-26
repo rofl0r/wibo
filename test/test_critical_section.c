@@ -165,10 +165,24 @@ static void test_delete_and_reinit(void) {
 	DeleteCriticalSection(&cs);
 }
 
+static void test_leave_without_enter(void) {
+	CRITICAL_SECTION cs;
+	InitializeCriticalSection(&cs);
+
+	LeaveCriticalSection(&cs);
+	TEST_CHECK_EQ(-1, cs.LockCount);
+
+	TEST_CHECK(TryEnterCriticalSection(&cs));
+	LeaveCriticalSection(&cs);
+	TEST_CHECK_EQ(-1, cs.LockCount);
+	DeleteCriticalSection(&cs);
+}
+
 int main(void) {
 	test_recursive_behavior();
 	test_wait_contention();
 	test_try_enter_contention();
 	test_delete_and_reinit();
+	test_leave_without_enter();
 	return EXIT_SUCCESS;
 }
