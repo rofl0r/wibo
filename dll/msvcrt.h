@@ -24,6 +24,12 @@ void CDECL msvcrt_qsort(void *base, SIZE_T num, SIZE_T width, MSVCRT_COMPARE_FN 
 SIZE_T CDECL msvcrt_strlen(LPCSTR str);
 int CDECL msvcrt_strcmp(LPCSTR a, LPCSTR b);
 int CDECL msvcrt_strncmp(LPCSTR a, LPCSTR b, SIZE_T count);
+int CDECL msvcrt__stricmp(LPCSTR a, LPCSTR b);
+int CDECL msvcrt__strnicmp(LPCSTR a, LPCSTR b, SIZE_T count);
+int CDECL msvcrt_stricmp(LPCSTR a, LPCSTR b);
+int CDECL msvcrt_strcmpi(LPCSTR a, LPCSTR b);
+int CDECL msvcrt__strcmpi(LPCSTR a, LPCSTR b);
+int CDECL msvcrt_strnicmp(LPCSTR a, LPCSTR b, SIZE_T count);
 LPSTR CDECL msvcrt_strcpy(LPSTR dest, LPCSTR src);
 LPSTR CDECL msvcrt_strncpy(LPSTR dest, LPCSTR src, SIZE_T count);
 LPSTR CDECL msvcrt_strcat(LPSTR dest, LPCSTR src);

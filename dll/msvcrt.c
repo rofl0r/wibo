@@ -612,6 +612,38 @@ int CDECL msvcrt_strncmp(LPCSTR a, LPCSTR b, SIZE_T count) {
 	return strncmp(a, b, count);
 }
 
+// The MS CRT names for case-insensitive compares: the underscore forms and the
+// deprecated aliases are separate exports with the same behaviour.
+int CDECL msvcrt__stricmp(LPCSTR a, LPCSTR b) {
+	HOST_CONTEXT_GUARD();
+	return strcasecmp(a, b);
+}
+
+int CDECL msvcrt_stricmp(LPCSTR a, LPCSTR b) {
+	HOST_CONTEXT_GUARD();
+	return strcasecmp(a, b);
+}
+
+int CDECL msvcrt_strcmpi(LPCSTR a, LPCSTR b) {
+	HOST_CONTEXT_GUARD();
+	return strcasecmp(a, b);
+}
+
+int CDECL msvcrt__strcmpi(LPCSTR a, LPCSTR b) {
+	HOST_CONTEXT_GUARD();
+	return strcasecmp(a, b);
+}
+
+int CDECL msvcrt__strnicmp(LPCSTR a, LPCSTR b, SIZE_T count) {
+	HOST_CONTEXT_GUARD();
+	return strncasecmp(a, b, count);
+}
+
+int CDECL msvcrt_strnicmp(LPCSTR a, LPCSTR b, SIZE_T count) {
+	HOST_CONTEXT_GUARD();
+	return strncasecmp(a, b, count);
+}
+
 LPSTR CDECL msvcrt_strcpy(LPSTR dest, LPCSTR src) {
 	HOST_CONTEXT_GUARD();
 	return strcpy(dest, src);
