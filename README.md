@@ -18,16 +18,16 @@ Requires GNU Make, GCC (or Clang) and, for 32-bit builds, multilib support.
 make
 ```
 
-This produces a release x86 (32-bit) Linux binary at `build/wibo32/wibo32`. Use `make DEBUG=1` for a debug build (`-O0 -g3`) in the same location.
+This produces a release x86 (32-bit) Linux binary at `./wibo32`. Use `make DEBUG=1` for a debug build (`-O0 -g3`) in the same location.
 
 Top-level targets:
 
-- `make wibo32`: 32-bit loader (`build/wibo32/wibo32`), PE32 programs
-- `make wibo64`: 64-bit loader (`build/wibo64/wibo64`), PE32+ programs
+- `make wibo32`: 32-bit loader (`./wibo32`), PE32 programs
+- `make wibo64`: 64-bit loader (`./wibo64`), PE32+ programs
 - `make wibo32 wibo64`: both
 - `make` builds `wibo32`, or `wibo64` when `WIN64=1` is set
 
-The 32-bit and 64-bit builds use separate object directories (`build/wibo32/obj`, `build/wibo64/obj`) because the preprocessor configuration differs.
+The executables are written to the top-level directory. Object files are kept apart: the 32-bit and 64-bit builds use separate object directories (`build/wibo32/obj`, `build/wibo64/obj`) because the preprocessor configuration differs.
 
 Build variables (pass on the command line, e.g. `make DEBUG=1 wibo64`):
 
@@ -51,7 +51,7 @@ Available configurations:
 - `make DEBUG=1 wibo32`: 32-bit Linux loader (debug)
 - `make wibo64`: 64-bit Linux loader for PE32+ programs (release)
 - `make DEBUG=1 wibo64`: 64-bit Linux loader for PE32+ programs (debug)
-- macOS: `make` and `make DEBUG=1` build an x86_64 binary (`build/wibo32-x86_64/wibo32-x86_64`)
+- macOS: `make` and `make DEBUG=1` build an x86_64 binary (`./wibo32`)
 
 ## Usage
 
@@ -106,12 +106,12 @@ with wibo's loader and serves the bundled DLLs and spawned children from memory.
 and PE32+ (64-bit) images are both supported; the image architecture selects the stub build.
 
 ```sh
-make                                  # builds build/tools/wibo-bundle and build/wibo32/wibo32 (PE32)
-build/tools/wibo-bundle -o app --stub build/wibo32/wibo32 prog.exe lib.dll
+make                                  # builds build/tools/wibo-bundle and ./wibo32 (PE32)
+build/tools/wibo-bundle -o app --stub ./wibo32 prog.exe lib.dll
 ./app arg1 arg2                       # arguments are passed literally
 
-make wibo64                          # builds build/wibo64/wibo64 (PE32+, no -m32 needed)
-build/tools/wibo-bundle -o app64 --stub build/wibo64/wibo64 prog64.exe lib64.dll
+make wibo64                          # builds ./wibo64 (PE32+, no -m32 needed)
+build/tools/wibo-bundle -o app64 --stub ./wibo64 prog64.exe lib64.dll
 ```
 
 Or embed the payload into a new wibo build (Linux only):

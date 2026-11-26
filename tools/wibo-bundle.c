@@ -1,6 +1,6 @@
 // wibo-bundle: packs a PE32 or PE32+ executable and its DLLs into a single Linux executable or a pak file.
 //
-//   wibo-bundle -o OUT --stub build/wibo32/wibo32 main.exe [dll...]   writes a self-contained executable
+//   wibo-bundle -o OUT --stub ./wibo32 main.exe [dll...]   writes a self-contained executable
 //   wibo-bundle --pak -o OUT main.exe [dll...]                       writes only the pak (for make
 //   WIBO_BUNDLE_FILES=...)
 //

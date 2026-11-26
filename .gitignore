@@ -1,4 +1,6 @@
 wibo
+wibo32
+wibo64
 build/
 *.o
 

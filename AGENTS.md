@@ -6,8 +6,8 @@
 - Sample fixtures for exercising the loader live in `test/`.
 
 ## Build, Test, and Development Commands
-- `make wibo32` builds the 32-bit loader at `build/wibo32/wibo32`, and `make wibo64` builds the Win64 (PE32+) loader at `build/wibo64/wibo64`. Use `DEBUG=1` for a debug build (`-O0 -g3`). The 32-bit build needs multilib packages or a 32-bit compiler; pass `CC="gcc -m32"` if needed. `ARCH=x86_64` or `WIBO_64=1` selects a 64-bit compat build.
-- `./build/wibo32/wibo32 /path/to/program.exe` runs a Windows binary. Use `-D` (or `WIBO_DEBUG=1`) for verbose logging. Use `-C` to set the working directory.
+- `make wibo32` builds the 32-bit loader at `./wibo32`, and `make wibo64` builds the Win64 (PE32+) loader at `./wibo64`. Object files go under `build/<name>/obj`. Use `DEBUG=1` for a debug build (`-O0 -g3`). The 32-bit build needs multilib packages or a 32-bit compiler; pass `CC="gcc -m32"` if needed. `ARCH=x86_64` or `WIBO_64=1` selects a 64-bit compat build.
+- `./wibo32 /path/to/program.exe` runs a Windows binary. Use `-D` (or `WIBO_DEBUG=1`) for verbose logging. Use `-C` to set the working directory.
 - `make test` runs the self-checking WinAPI fixtures (requires `i686-w64-mingw32-gcc` and `i686-w64-mingw32-windres`). Use `make test TEST=wibo.<name>` to run one fixture.
 - `clang-format -i path/to/file.cpp` and `clang-tidy path/to/file.c -- -I dll -I src` keep contributions aligned with the repo's tooling.
 

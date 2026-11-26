@@ -1,15 +1,15 @@
 # wibo build system (GNU Make). See README.md for details.
 #
-#   make                        build wibo32 (build/wibo32/wibo32, PE32 guests)
-#   make wibo32                 same as above
-#   make wibo64                 build wibo64 (build/wibo64/wibo64, PE32+ guests)
+#   make                        build ./wibo32 (PE32 guests), or ./wibo64 when WIN64=1
+#   make wibo32                 build ./wibo32 (PE32 guests)
+#   make wibo64                 build ./wibo64 (PE32+ guests)
 #   make wibo32 wibo64          build both
 #   make DEBUG=1 wibo64         build with -O0 -g3
 #   make test [TEST=name]       build the fixtures for the selected runtime and run them under wibo
-#   make WIN64=1 test           run the Win64 fixtures under wibo64
+#   make WIN64=1 test           run the Win64 fixtures under ./wibo64
 #   make bundle WIBO_BUNDLE_FILES="app.exe lib.dll"
 #                               build build/wibo32/wibo-bundled with the files linked in (Linux)
-#   build/tools/wibo-bundle -o app --stub build/wibo32/wibo32 app.exe lib.dll
+#   build/tools/wibo-bundle -o app --stub ./wibo32 app.exe lib.dll
 #                               write a standalone executable (any host with a plain wibo)
 #
 # Variables (command line or environment):
@@ -82,7 +82,9 @@ GEN_DIR := $(BUILD_DIR)/generated
 TEST_BIN_DIR := $(BUILD_DIR)/test
 VENDOR_DIR := $(BUILD_ROOT)/vendor
 VENDOR_ABS := $(abspath $(VENDOR_DIR))
-WIBO := $(BUILD_DIR)/$(notdir $(BUILD_DIR))
+# The loader executable lives in the top-level directory; only its object files go under BUILD_DIR.
+WIBO_NAME := $(if $(filter 1,$(WIN64)),wibo64,wibo32)
+WIBO := $(CURDIR)/$(WIBO_NAME)
 TOOLS_DIR := $(BUILD_ROOT)/tools
 GENTRAMP := $(TOOLS_DIR)/gentramp
 WIBO_BUNDLE_TOOL := $(TOOLS_DIR)/wibo-bundle
@@ -300,18 +302,17 @@ ifeq ($(UNAME_S),Darwin)
 $(OBJ_DIR)/src/setup_darwin.c.o: OBJ_CFLAGS += -fms-extensions
 endif
 
-.PHONY: all clean distclean fixtures test test-bundle check-mingw gentramp bundle-tool bundle format check-format list-tests print-wibo wibo32 wibo64 build-wibo FORCE
+.PHONY: all clean distclean fixtures test test-bundle check-mingw gentramp bundle-tool bundle format check-format list-tests print-wibo FORCE
 
-all: $(if $(filter 1,$(WIN64)),wibo64,wibo32)
+all: $(WIBO) $(WIBO_BUNDLE_TOOL)
 
-# Each variant is built by a sub-make so both can be requested in one invocation.
-wibo32:
-	@$(MAKE) --no-print-directory WIN64=0 build-wibo
+# The executables are named after their targets. Each is built by a sub-make because the object directory
+# depends on WIN64 (set at parse time); FORCE lets the sub-make decide what is stale.
+wibo32: FORCE
+	@$(MAKE) --no-print-directory WIN64=0 $(CURDIR)/wibo32 $(WIBO_BUNDLE_TOOL)
 
-wibo64:
-	@$(MAKE) --no-print-directory WIN64=1 build-wibo
-
-build-wibo: $(WIBO) $(WIBO_BUNDLE_TOOL)
+wibo64: FORCE
+	@$(MAKE) --no-print-directory WIN64=1 $(CURDIR)/wibo64 $(WIBO_BUNDLE_TOOL)
 
 print-wibo:
 	@echo $(WIBO)
@@ -497,10 +498,10 @@ $(BUILD_DIR) $(GEN_DIR) $(TEST_BIN_DIR) $(TOOLS_DIR) $(VENDOR_DIR):
 	@mkdir -p $@
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) wibo32 wibo64
 
 distclean:
-	rm -rf $(BUILD_ROOT)
+	rm -rf $(BUILD_ROOT) wibo32 wibo64
 
 FORCE:
 
