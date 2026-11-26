@@ -12,14 +12,15 @@ int main(void) {
 	// getenv results must stay valid across later getenv calls and heap reuse.
 	const char *path = getenv("PATH");
 	TEST_CHECK(path != NULL);
-	char *saved = malloc(strlen(path) + 1);
+	size_t pathLen = strlen(path);
+	char *saved = malloc(pathLen + 1);
 	TEST_CHECK(saved != NULL);
 	strcpy(saved, path);
 	for (int i = 0; i < 64; i++) {
 		getenv("HOME");
 		getenv("WIBO_NO_SUCH_VARIABLE");
 	}
-	for (size_t n = 1; n <= strlen(saved) + 64; n++) {
+	for (size_t n = 1; n <= pathLen + 64; n++) {
 		char *p = malloc(n);
 		if (p) {
 			memset(p, 'X', n);
