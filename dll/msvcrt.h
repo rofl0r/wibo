@@ -29,6 +29,8 @@ LPSTR CDECL msvcrt_strncpy(LPSTR dest, LPCSTR src, SIZE_T count);
 LPSTR CDECL msvcrt_strcat(LPSTR dest, LPCSTR src);
 LPSTR CDECL msvcrt_strchr(LPCSTR str, int ch);
 LPSTR CDECL msvcrt_strrchr(LPCSTR str, int ch);
+LPSTR CDECL msvcrt__strdup(LPCSTR str);
+LPSTR CDECL msvcrt_strdup(LPCSTR str);
 LPSTR CDECL msvcrt_strerror(int errnum);
 int CDECL msvcrt_tolower(int ch);
 SIZE_T CDECL msvcrt_wcslen(LPCWSTR str);

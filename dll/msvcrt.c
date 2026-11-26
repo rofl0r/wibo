@@ -637,6 +637,33 @@ LPSTR CDECL msvcrt_strrchr(LPCSTR str, int ch) {
 	return strrchr(str, ch);
 }
 
+// The copy is owned by the guest and released with free(), so it comes from the
+// same allocator as malloc().
+static LPSTR duplicateGuestString(LPCSTR str) {
+	if (!str) {
+		errno = EINVAL;
+		return NULL;
+	}
+	SIZE_T n = strlen(str) + 1;
+	char *copy = guestAlloc(n);
+	if (!copy) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	memcpy(copy, str, n);
+	return copy;
+}
+
+LPSTR CDECL msvcrt__strdup(LPCSTR str) {
+	HOST_CONTEXT_GUARD();
+	return duplicateGuestString(str);
+}
+
+LPSTR CDECL msvcrt_strdup(LPCSTR str) {
+	HOST_CONTEXT_GUARD();
+	return duplicateGuestString(str);
+}
+
 LPSTR CDECL msvcrt_strerror(int errnum) {
 	HOST_CONTEXT_GUARD();
 #ifdef WIBO_GUEST64
