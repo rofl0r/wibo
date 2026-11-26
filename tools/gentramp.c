@@ -1569,6 +1569,9 @@ static void emitThunk64(Buf *o, const Sig *f, int h2g) {
             bline(o, "\tmov qword ptr [rbx+TEB_FSBASE], r9");
         }
         bline(o, "\tmov rbp, qword ptr [rbx+TEB_SP]");
+        /* Saves the enclosing activation's boundary on this stack so exit can restore it for nested calls. */
+        bline(o, "\tpush qword ptr [rbx+TEB_BOUNDARY]");
+        bline(o, "\tmov qword ptr [rbx+TEB_BOUNDARY], rbp");
         bline(o, "\tmov qword ptr [rbx+TEB_SP], rsp");
         bline(o, "\tmov rsp, rbp");
         if (tgt.stackSize > 0)
@@ -1608,6 +1611,7 @@ static void emitThunk64(Buf *o, const Sig *f, int h2g) {
         }
         bline(o, "\tmov rsp, qword ptr [rbx+TEB_SP]");
         bline(o, "\tmov qword ptr [rbx+TEB_SP], rbp");
+        bline(o, "\tpop qword ptr [rbx+TEB_BOUNDARY]");
         bline(o, "\tpop rbx");
         bline(o, "\tpop rbp");
         bline(o, "\tret");
