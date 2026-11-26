@@ -19,6 +19,8 @@ void CDECL msvcrt_free(void *ptr);
 void *CDECL msvcrt_memcpy(void *dest, const void *src, SIZE_T count);
 void *CDECL msvcrt_memset(void *dest, int ch, SIZE_T count);
 int CDECL msvcrt_memcmp(const void *buf1, const void *buf2, SIZE_T count);
+int CDECL msvcrt__memicmp(const void *buf1, const void *buf2, SIZE_T count);
+int CDECL msvcrt_memicmp(const void *buf1, const void *buf2, SIZE_T count);
 void CDECL msvcrt_qsort(void *base, SIZE_T num, SIZE_T width, MSVCRT_COMPARE_FN compare);
 
 SIZE_T CDECL msvcrt_strlen(LPCSTR str);

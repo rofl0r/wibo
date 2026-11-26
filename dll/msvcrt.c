@@ -607,6 +607,29 @@ int CDECL msvcrt_memcmp(const void *buf1, const void *buf2, SIZE_T count) {
 	return memcmp(buf1, buf2, count);
 }
 
+static int memicmpImpl(const void *buf1, const void *buf2, SIZE_T count) {
+	const unsigned char *a = buf1;
+	const unsigned char *b = buf2;
+	for (SIZE_T i = 0; i < count; i++) {
+		int ca = tolower(a[i]);
+		int cb = tolower(b[i]);
+		if (ca != cb) {
+			return ca - cb;
+		}
+	}
+	return 0;
+}
+
+int CDECL msvcrt__memicmp(const void *buf1, const void *buf2, SIZE_T count) {
+	HOST_CONTEXT_GUARD();
+	return memicmpImpl(buf1, buf2, count);
+}
+
+int CDECL msvcrt_memicmp(const void *buf1, const void *buf2, SIZE_T count) {
+	HOST_CONTEXT_GUARD();
+	return memicmpImpl(buf1, buf2, count);
+}
+
 static int qsortAdapter(const void *a, const void *b, void *compare) {
 	return call_MSVCRT_COMPARE_FN((MSVCRT_COMPARE_FN)compare, a, b);
 }
