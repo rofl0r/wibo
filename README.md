@@ -18,30 +18,40 @@ Requires GNU Make, GCC (or Clang) and, for 32-bit builds, multilib support.
 make
 ```
 
-This produces a release x86 (32-bit) Linux binary at `build/release/wibo`. Use `make CONFIG=debug` for a debug build at `build/debug/wibo`.
+This produces a release x86 (32-bit) Linux binary at `build/wibo32/wibo32`. Use `make DEBUG=1` for a debug build (`-O0 -g3`) in the same location.
 
-Build variables (pass on the command line, e.g. `make CONFIG=debug ARCH=x86_64`):
+Top-level targets:
+
+- `make wibo32`: 32-bit loader (`build/wibo32/wibo32`), PE32 programs
+- `make wibo64`: 64-bit loader (`build/wibo64/wibo64`), PE32+ programs
+- `make wibo32 wibo64`: both
+- `make` builds `wibo32`, or `wibo64` when `WIN64=1` is set
+
+The 32-bit and 64-bit builds use separate object directories (`build/wibo32/obj`, `build/wibo64/obj`) because the preprocessor configuration differs.
+
+Build variables (pass on the command line, e.g. `make DEBUG=1 wibo64`):
 
 | Variable                  | Default                | Description                                                                                  |
 | ------------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
-| `CONFIG`                  | `release`              | `debug` (`-g -O0`) or `release` (`-O3 -DNDEBUG`)                                             |
+| `DEBUG`                   | `0`                    | `1` builds with `-O0 -g3`; `0` builds with `-O3 -DNDEBUG`                                    |
+| `WIN64`                   | `0`                    | `1` selects the 64-bit loader (`wibo64`), used by `make` and `make test`                     |
 | `ARCH`                    | `i686` (`x86_64` on macOS) | `i686` (32-bit, `-m32`) or `x86_64`. `WIBO_64=1` is shorthand for `ARCH=x86_64`             |
-| `CC`                      | `gcc` (`cc` on macOS)  | Target C compiler                                                                            |
+| `CC`                      | `gcc` (`cc` on macOS)  | Target C compiler. For `wibo32` it must be a 32-bit cross compiler or a multilib gcc, e.g. `make CC="gcc -m32" wibo32` |
 | `LTO`                     | `0`                    | Set to `1` to build with `-flto`                                                             |
 | `WIBO_ENABLE_LIBURING`    | `0`                    | Set to `1` to enable the io_uring backend (links system `liburing`)                          |
 | `WIBO_ENABLE_WINE_DLLS`   | `1`                    | Set to `0` to skip embedding the Wine CRT DLLs (see below)                                   |
-| `MINGW_CC`, `MINGW_WINDRES` | `i686-w64-mingw32-gcc`, `i686-w64-mingw32-windres` | MinGW tools used to build the test fixtures              |
+| `MINGW_CC`, `MINGW_WINDRES` | `i686-w64-mingw32-gcc`, `i686-w64-mingw32-windres` (`x86_64-w64-mingw32-gcc` when `WIN64=1`) | MinGW tools used to build the test fixtures |
 | `EXTRA_CFLAGS`, `EXTRA_LDFLAGS`, `EXTRA_LIBS` | empty      | Extra flags appended to compile, link, and library steps                                     |
 
 Run `make print-wibo` to print the output path for the current configuration.
 
-Available configurations (`CONFIG` and `ARCH`):
+Available configurations:
 
-- `make CONFIG=debug`: Debug Linux x86
-- `make`: Release Linux x86
-- `make ARCH=x86_64 CONFIG=debug`: Debug Linux x86_64
-- `make ARCH=x86_64`: Release Linux x86_64
-- macOS: `make CONFIG=debug` and `make` build an x86_64 binary (`build/<config>/wibo`)
+- `make wibo32`: 32-bit Linux loader (release)
+- `make DEBUG=1 wibo32`: 32-bit Linux loader (debug)
+- `make wibo64`: 64-bit Linux loader for PE32+ programs (release)
+- `make DEBUG=1 wibo64`: 64-bit Linux loader for PE32+ programs (debug)
+- macOS: `make` and `make DEBUG=1` build an x86_64 binary (`build/wibo32-x86_64/wibo32-x86_64`)
 
 ## Usage
 
@@ -96,19 +106,19 @@ with wibo's loader and serves the bundled DLLs and spawned children from memory.
 and PE32+ (64-bit) images are both supported; the image architecture selects the stub build.
 
 ```sh
-make                                  # builds build/tools/wibo-bundle and build/release/wibo (PE32)
-build/tools/wibo-bundle -o app --stub build/release/wibo prog.exe lib.dll
+make                                  # builds build/tools/wibo-bundle and build/wibo32/wibo32 (PE32)
+build/tools/wibo-bundle -o app --stub build/wibo32/wibo32 prog.exe lib.dll
 ./app arg1 arg2                       # arguments are passed literally
 
-make WIN64=1                          # builds build/release-win64/wibo64 (PE32+, no -m32 needed)
-build/tools/wibo-bundle -o app64 --stub build/release-win64/wibo64 prog64.exe lib64.dll
+make wibo64                          # builds build/wibo64/wibo64 (PE32+, no -m32 needed)
+build/tools/wibo-bundle -o app64 --stub build/wibo64/wibo64 prog64.exe lib64.dll
 ```
 
 Or embed the payload into a new wibo build (Linux only):
 
 ```sh
-make bundle WIBO_BUNDLE_FILES="prog.exe lib.dll"               # -> build/release/wibo-bundled
-make WIN64=1 bundle WIBO_BUNDLE_FILES="prog64.exe lib64.dll"   # -> build/release-win64/wibo-bundled
+make bundle WIBO_BUNDLE_FILES="prog.exe lib.dll"               # -> build/wibo32/wibo-bundled
+make WIN64=1 bundle WIBO_BUNDLE_FILES="prog64.exe lib64.dll"   # -> build/wibo64/wibo-bundled
 ```
 
 Notes:

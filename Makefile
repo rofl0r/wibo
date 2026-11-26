@@ -1,21 +1,24 @@
 # wibo build system (GNU Make). See README.md for details.
 #
-#   make                        build build/release/wibo
-#   make CONFIG=debug           build build/debug/wibo
-#   make ARCH=x86_64            64-bit build in build/release-x86_64/
-#   make WIN64=1                Win64 runtime (runs PE32+ programs) in build/release-win64/
-#   make test [TEST=name]       build the Win32 fixtures and run them under wibo
+#   make                        build wibo32 (build/wibo32/wibo32, PE32 guests)
+#   make wibo32                 same as above
+#   make wibo64                 build wibo64 (build/wibo64/wibo64, PE32+ guests)
+#   make wibo32 wibo64          build both
+#   make DEBUG=1 wibo64         build with -O0 -g3
+#   make test [TEST=name]       build the fixtures for the selected runtime and run them under wibo
+#   make WIN64=1 test           run the Win64 fixtures under wibo64
 #   make bundle WIBO_BUNDLE_FILES="app.exe lib.dll"
-#                               build build/release/wibo-bundled with the files linked in (Linux)
-#   build/tools/wibo-bundle -o app --stub build/release/wibo app.exe lib.dll
+#                               build build/wibo32/wibo-bundled with the files linked in (Linux)
+#   build/tools/wibo-bundle -o app --stub build/wibo32/wibo32 app.exe lib.dll
 #                               write a standalone executable (any host with a plain wibo)
 #
 # Variables (command line or environment):
-#   CONFIG                 debug | release (default release)
+#   DEBUG                  1 builds with -O0 -g3; 0 builds with -O3 -DNDEBUG (default 0)
 #   ARCH                   i686 | x86_64 (default i686; WIBO_64=1 selects x86_64)
 #   WIN64                  1 builds the Win64 runtime (implies ARCH=x86_64): native 64-bit guest pointers,
 #                          no 32-bit trampolines or LDT setup (default 0)
-#   CC                     target C compiler (default gcc)
+#   CC                     target C compiler (default gcc). wibo32 needs a 32-bit compiler: a 32-bit cross
+#                          compiler or a multilib gcc, e.g. make CC="gcc -m32" wibo32
 #   LTO                    1 enables link-time optimization (default 0)
 #   WIBO_VERSION           version string (default: git describe, else "unknown")
 #   WIBO_ENABLE_LIBURING   1 enables the io_uring backend on Linux (default 0)
@@ -35,9 +38,9 @@ CC := $(if $(filter Darwin,$(UNAME_S)),cc,gcc)
 endif
 HOST_CC ?= cc
 
-CONFIG ?= release
-ifneq ($(filter-out debug release,$(CONFIG)),)
-$(error CONFIG must be 'debug' or 'release', got '$(CONFIG)')
+DEBUG ?= 0
+ifneq ($(filter-out 0 1,$(DEBUG)),)
+$(error DEBUG must be 0 or 1, got '$(DEBUG)')
 endif
 
 DEFAULT_ARCH := $(if $(filter Darwin,$(UNAME_S)),x86_64,i686)
@@ -67,13 +70,19 @@ MINGW_WINDRES ?= $(MINGW_ARCH)-w64-mingw32-windres
 CLANG_FORMAT ?= clang-format
 
 BUILD_ROOT := build
-BUILD_DIR := $(BUILD_ROOT)/$(CONFIG)$(if $(filter 1,$(WIN64)),-win64,$(if $(filter $(DEFAULT_ARCH),$(ARCH)),,-$(ARCH)))
+ifeq ($(WIN64),1)
+BUILD_DIR := $(BUILD_ROOT)/wibo64
+else ifeq ($(ARCH),i686)
+BUILD_DIR := $(BUILD_ROOT)/wibo32
+else
+BUILD_DIR := $(BUILD_ROOT)/wibo32-$(ARCH)
+endif
 OBJ_DIR := $(BUILD_DIR)/obj
 GEN_DIR := $(BUILD_DIR)/generated
 TEST_BIN_DIR := $(BUILD_DIR)/test
 VENDOR_DIR := $(BUILD_ROOT)/vendor
 VENDOR_ABS := $(abspath $(VENDOR_DIR))
-WIBO := $(BUILD_DIR)/wibo$(if $(filter 1,$(WIN64)),64)
+WIBO := $(BUILD_DIR)/$(notdir $(BUILD_DIR))
 TOOLS_DIR := $(BUILD_ROOT)/tools
 GENTRAMP := $(TOOLS_DIR)/gentramp
 WIBO_BUNDLE_TOOL := $(TOOLS_DIR)/wibo-bundle
@@ -84,10 +93,10 @@ TARGET_ARCH_FLAGS ?= $(if $(filter i686,$(ARCH)),-m32)
 CC_TARGET_CC := $(strip $(CC) $(TARGET_ARCH_FLAGS))
 GENTRAMP_ARCH := $(if $(filter x86_64,$(ARCH)),x86_64,x86)
 
-ifeq ($(CONFIG),release)
-OPT_FLAGS := -O3 -DNDEBUG
+ifeq ($(DEBUG),1)
+OPT_FLAGS := -O0 -g3
 else
-OPT_FLAGS := -g -O0
+OPT_FLAGS := -O3 -DNDEBUG
 endif
 
 ifeq ($(LTO),1)
@@ -274,6 +283,13 @@ WIBO_CSTD := -std=gnu11
 WIBO_LDFLAGS := $(TARGET_ARCH_FLAGS) $(LTO_FLAGS) $(GNU_ONLY_FLAGS) $(PLATFORM_LDFLAGS) $(EXTRA_LDFLAGS)
 WIBO_LIBS := $(PLATFORM_LIBS) $(URING_LIBS) $(EXTRA_LIBS)
 
+# Objects are rebuilt when the compile flags change (e.g. after toggling DEBUG or CC); the stamp only
+# changes mtime when its content does.
+CFLAGS_STAMP := $(BUILD_DIR)/cflags.stamp
+$(CFLAGS_STAMP): FORCE | $(BUILD_DIR)
+	@printf '%s\n' '$(CC) $(WIBO_CFLAGS) $(WIBO_CSTD)' > $@.tmp
+	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
 define EMBED_RULE
 $$(OBJ_DIR)/dll/$(1).c.o: OBJ_CFLAGS := -DEMBED_PATH='"$$(VENDOR_ABS)/$(1).dll"'
 $$(OBJ_DIR)/dll/$(1).c.o: $$(VENDOR_DIR)/$(1).dll
@@ -284,9 +300,18 @@ ifeq ($(UNAME_S),Darwin)
 $(OBJ_DIR)/src/setup_darwin.c.o: OBJ_CFLAGS += -fms-extensions
 endif
 
-.PHONY: all clean distclean fixtures test test-bundle check-mingw gentramp bundle-tool bundle format check-format list-tests print-wibo FORCE
+.PHONY: all clean distclean fixtures test test-bundle check-mingw gentramp bundle-tool bundle format check-format list-tests print-wibo wibo32 wibo64 build-wibo FORCE
 
-all: $(WIBO) $(WIBO_BUNDLE_TOOL)
+all: $(if $(filter 1,$(WIN64)),wibo64,wibo32)
+
+# Each variant is built by a sub-make so both can be requested in one invocation.
+wibo32:
+	@$(MAKE) --no-print-directory WIN64=0 build-wibo
+
+wibo64:
+	@$(MAKE) --no-print-directory WIN64=1 build-wibo
+
+build-wibo: $(WIBO) $(WIBO_BUNDLE_TOOL)
 
 print-wibo:
 	@echo $(WIBO)
@@ -294,15 +319,15 @@ print-wibo:
 $(WIBO): $(WIBO_OBJS) | $(BUILD_DIR)
 	$(CC) $(WIBO_LDFLAGS) -o $@ $(WIBO_OBJS) $(WIBO_LIBS)
 
-$(OBJ_DIR)/%.c.o: %.c | $(TRAMP_STAMPS) $(GEN_DIR)/version_info.h
+$(OBJ_DIR)/%.c.o: %.c $(CFLAGS_STAMP) | $(TRAMP_STAMPS) $(GEN_DIR)/version_info.h
 	@mkdir -p $(@D)
 	$(CC) $(WIBO_CFLAGS) $(WIBO_CSTD) $(OBJ_CFLAGS) -c $< -o $@
 
-$(OBJ_DIR)/%.S.o: %.S
+$(OBJ_DIR)/%.S.o: %.S $(CFLAGS_STAMP)
 	@mkdir -p $(@D)
 	$(CC) $(WIBO_COMMON_FLAGS) $(OBJ_CFLAGS) -c $< -o $@
 
-$(TRAMP_OBJS): $(OBJ_DIR)/generated/%_trampolines.S.o: $(GEN_DIR)/%_trampolines.stamp
+$(TRAMP_OBJS): $(OBJ_DIR)/generated/%_trampolines.S.o: $(GEN_DIR)/%_trampolines.stamp $(CFLAGS_STAMP)
 	@mkdir -p $(@D)
 	$(CC) $(WIBO_COMMON_FLAGS) -c $(GEN_DIR)/$*_trampolines.S -o $@
 

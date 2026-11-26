@@ -6,10 +6,10 @@
 - Sample fixtures for exercising the loader live in `test/`.
 
 ## Build, Test, and Development Commands
-- `make` builds a 32-bit release binary at `build/release/wibo`; ensure multilib packages are present. Use `make CONFIG=debug` for a debug build (`build/debug/wibo`), and `ARCH=x86_64` or `WIBO_64=1` for 64-bit.
-- `./build/release/wibo /path/to/program.exe` runs a Windows binary. Use `-D` (or `WIBO_DEBUG=1`) for verbose logging. Use `-C` to set the working directory.
+- `make wibo32` builds the 32-bit loader at `build/wibo32/wibo32`, and `make wibo64` builds the Win64 (PE32+) loader at `build/wibo64/wibo64`. Use `DEBUG=1` for a debug build (`-O0 -g3`). The 32-bit build needs multilib packages or a 32-bit compiler; pass `CC="gcc -m32"` if needed. `ARCH=x86_64` or `WIBO_64=1` selects a 64-bit compat build.
+- `./build/wibo32/wibo32 /path/to/program.exe` runs a Windows binary. Use `-D` (or `WIBO_DEBUG=1`) for verbose logging. Use `-C` to set the working directory.
 - `make test` runs the self-checking WinAPI fixtures (requires `i686-w64-mingw32-gcc` and `i686-w64-mingw32-windres`). Use `make test TEST=wibo.<name>` to run one fixture.
-- `clang-format -i path/to/file.cpp` and `clang-tidy -p build/debug path/to/file.cpp` keep contributions aligned with the repo's tooling.
+- `clang-format -i path/to/file.cpp` and `clang-tidy path/to/file.c -- -I dll -I src` keep contributions aligned with the repo's tooling.
 
 ## Coding Style & Naming Conventions
 - Formatting follows `.clang-format` (LLVM base, tabbed indentation width 4, 120 column limit).
@@ -31,8 +31,8 @@
 - Keep new repros small and self-contained (`test_<feature>.c`).
 - All fixtures must self-assert; use `test_assert.h` helpers so `make test` fails on mismatched WinAPI behaviour.
 - Add new fixture names to `FIXTURE_NAMES` (or `FIXTURE_DLL_NAMES` for DLL fixtures) in the `Makefile`, then rebuild. (`make fixtures`)
-- ALWAYS run tests against `wine` FIRST to establish expected behaviour. (`WINEDEBUG=-all wine build/debug/test/test_<feature>.exe`)
-- Run tests against wibo with `make test` (or `make CONFIG=debug test`). Use `make test TEST=wibo.<name>` for a single fixture.
+- ALWAYS run tests against `wine` FIRST to establish expected behaviour. (`WINEDEBUG=-all wine build/wibo32/test/test_<feature>.exe`)
+- Run tests against wibo with `make test` (or `make DEBUG=1 test`, or `make WIN64=1 test` for the Win64 loader). Use `make test TEST=wibo.<name>` for a single fixture.
 
 ## Debugging Workflow
 - Reproduce crashes under `gdb` (or `lldb`) with `-q -batch` to capture backtraces, register state, and the faulting instruction without interactive prompts.
