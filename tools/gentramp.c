@@ -1604,6 +1604,17 @@ static void emitThunk64(Buf *o, const Sig *f, int h2g) {
         bline(o, "\tsub rsp, %ld", tgt.stackSize);
     if (align > 0)
         bline(o, "\tand rsp, ~%ld", align - 1);
+    /* Publish the guest's errno to the host before the shim runs. This precedes the argument loads, so
+     * it may clobber caller-saved registers. r10 holds the guest stack pointer, so it is saved on the stack,
+     * and rsp is restored from the saved copy after the call. */
+    bline(o, "\tpush r10");
+    bline(o, "\tmov r10, rsp");
+    bline(o, "\tand rsp, ~15");
+    bline(o, "\tpush r10");
+    bline(o, "\tpush r10");
+    bline(o, "\tcall wibo_errnoGuestToHost");
+    bline(o, "\tmov rsp, qword ptr [rsp]");
+    bline(o, "\tpop r10");
 
     for (int i = 0; i < nslots; i++) {
         const Place *t = &tgt.places[i];
@@ -1636,6 +1647,13 @@ static void emitThunk64(Buf *o, const Sig *f, int h2g) {
     }
 
     bline(o, "\tcall %s", callTarget);
+    /* The hook may clobber caller-saved registers, so rax and rdx (the return value) are kept.
+     * rsp is 16-byte aligned here, so the two pushes keep the call site aligned. */
+    bline(o, "\tpush rax");
+    bline(o, "\tpush rdx");
+    bline(o, "\tcall wibo_errnoHostToGuest");
+    bline(o, "\tpop rdx");
+    bline(o, "\tpop rax");
     if (typeSize(f->ret) > 4)
         bline(o, "\tmov rdx, rax\n\tshr rdx, 32");
     bline(o, "\tmov rsp, qword ptr [rbx+TEB_SP]");

@@ -88,6 +88,25 @@ static void errnoSyncOut(const int *unused) {
 	t_errnoShadow = hostErrno;
 }
 
+// Called by generated thunks before every guest-to-host shim runs (see errors.h). Refreshing the shadow here
+// keeps the exit hook below from mistaking a stale shadow for a shim write.
+void wibo_errnoGuestToHost(void) {
+	int guestErrno = *errnoCell();
+	errno = guestErrno;
+	t_errnoShadow = guestErrno;
+}
+
+// Called by generated thunks after every guest-to-host shim returns (see errors.h). If the shim
+// left errno at the value last synced, the guest's own write to the cell is kept.
+void wibo_errnoHostToGuest(void) {
+	int hostErrno = errno;
+	if (hostErrno == t_errnoShadow) {
+		return;
+	}
+	*errnoCell() = hostErrno;
+	t_errnoShadow = hostErrno;
+}
+
 // Redefined for this file only so that every msvcrt entry point gets the sync.
 #undef HOST_CONTEXT_GUARD
 #define HOST_CONTEXT_GUARD() \

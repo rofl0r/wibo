@@ -76,6 +76,11 @@
 #define S_OK ((HRESULT)0x00000000)
 
 DWORD wibo_winErrorFromErrno(int err);
+
+// Called by generated guest-to-host thunks around a host shim call. Only defined on wibo32.
+void wibo_errnoGuestToHost(void);
+void wibo_errnoHostToGuest(void);
+
 NTSTATUS wibo_statusFromWinError(DWORD error);
 NTSTATUS wibo_statusFromErrno(int err);
 DWORD wibo_winErrorFromNtStatus(NTSTATUS status);
