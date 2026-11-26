@@ -29,6 +29,10 @@ extern char **environ;
 #define MSVCRT_FILE_SIZE 48
 #define MSVCRT_IOB_COUNT 32
 #define MSVCRT_ONEXIT_MAX 32
+// MS setvbuf modes; these differ from glibc's values, so they are mapped explicitly.
+#define MSVCRT_IOFBF 0x0000
+#define MSVCRT_IOLBF 0x0040
+#define MSVCRT_IONBF 0x0004
 
 // The MS FILE layout is opaque to guests. Slots 0-2 are stdin/stdout/stderr; slots 3+ hold fopen results.
 static unsigned char g_iob[MSVCRT_IOB_COUNT * MSVCRT_FILE_SIZE] __attribute__((aligned(16)));
@@ -36,7 +40,7 @@ static FILE *g_hostStreams[MSVCRT_IOB_COUNT];
 static int g_commode;
 static int g_fmode;
 static char **g_initenv;
-static MSVCRT_ONEXIT_FN g_onexit[MSVCRT_ONEXIT_MAX];
+static MSVCRT_PVFV g_onexit[MSVCRT_ONEXIT_MAX];
 static size_t g_onexitCount;
 
 static long streamIndex(void *stream) {
@@ -409,8 +413,8 @@ static void *msvcrtResolveByName(const char *name) {
 
 static void runOnexitTable(void) {
 	while (g_onexitCount) {
-		MSVCRT_ONEXIT_FN fn = g_onexit[--g_onexitCount];
-		call_MSVCRT_ONEXIT_FN(fn);
+		MSVCRT_PVFV fn = g_onexit[--g_onexitCount];
+		call_MSVCRT_PVFV(fn);
 	}
 	fflush(NULL);
 }
@@ -839,13 +843,52 @@ int CDECL msvcrt_raise(int sig) {
 	return 0;
 }
 
-void *CDECL msvcrt__onexit(MSVCRT_ONEXIT_FN fn) {
+void *CDECL msvcrt__onexit(MSVCRT_PVFV fn) {
 	HOST_CONTEXT_GUARD();
 	if (g_onexitCount >= MSVCRT_ONEXIT_MAX) {
 		return NULL;
 	}
 	g_onexit[g_onexitCount++] = fn;
 	return (void *)fn;
+}
+
+int CDECL msvcrt_atexit(MSVCRT_PVFV fn) {
+	HOST_CONTEXT_GUARD();
+	if (g_onexitCount >= MSVCRT_ONEXIT_MAX) {
+		return -1;
+	}
+	g_onexit[g_onexitCount++] = fn;
+	return 0;
+}
+
+LPSTR CDECL msvcrt_getenv(LPCSTR name) {
+	HOST_CONTEXT_GUARD();
+	return getenv(name);
+}
+
+int CDECL msvcrt_setvbuf(void *stream, LPSTR buf, int mode, SIZE_T size) {
+	HOST_CONTEXT_GUARD();
+	FILE *f = hostStream(stream);
+	if (!f) {
+		errno = EINVAL;
+		return -1;
+	}
+	int hostMode;
+	switch (mode) {
+	case MSVCRT_IOFBF:
+		hostMode = _IOFBF;
+		break;
+	case MSVCRT_IOLBF:
+		hostMode = _IOLBF;
+		break;
+	case MSVCRT_IONBF:
+		hostMode = _IONBF;
+		break;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+	return setvbuf(f, buf, hostMode, size);
 }
 
 void CDECL msvcrt__initterm(MSVCRT_PVFV *begin, MSVCRT_PVFV *end) {

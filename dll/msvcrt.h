@@ -4,7 +4,6 @@
 
 // Guest-ABI callbacks; gentramp emits call_<typedef> helpers for these.
 typedef void(_CC_CDECL *MSVCRT_PVFV)(void);
-typedef int(_CC_CDECL *MSVCRT_ONEXIT_FN)(void);
 typedef int(_CC_CDECL *MSVCRT_COMPARE_FN)(const void *, const void *);
 typedef void(_CC_CDECL *MSVCRT_SIGHANDLER)(int);
 
@@ -46,7 +45,8 @@ void CDECL msvcrt_exit(int code);
 void CDECL msvcrt__cexit(void);
 void CDECL msvcrt__amsg_exit(int code);
 void CDECL msvcrt_abort(void);
-void *CDECL msvcrt__onexit(MSVCRT_ONEXIT_FN fn);
+void *CDECL msvcrt__onexit(MSVCRT_PVFV fn);
+int CDECL msvcrt_atexit(MSVCRT_PVFV fn);
 void CDECL msvcrt__initterm(MSVCRT_PVFV *begin, MSVCRT_PVFV *end);
 int CDECL msvcrt___getmainargs(int *argc, char ***argv, char ***envp, int doWildCard, void *startInfo);
 void CDECL msvcrt___set_app_type(int type);
@@ -60,7 +60,9 @@ int *CDECL msvcrt__errno(void);
 void *CDECL msvcrt_localeconv(void);
 void *CDECL msvcrt_signal(int sig, void *handler);
 int CDECL msvcrt_raise(int sig);
+LPSTR CDECL msvcrt_getenv(LPCSTR name);
 void *CDECL msvcrt_fopen(LPCSTR filename, LPCSTR mode);
+int CDECL msvcrt_setvbuf(void *stream, LPSTR buf, int mode, SIZE_T size);
 int CDECL msvcrt_fclose(void *stream);
 int CDECL msvcrt_fflush(void *stream);
 SIZE_T CDECL msvcrt_fread(void *buf, SIZE_T size, SIZE_T count, void *stream);

@@ -2,6 +2,7 @@
 
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "test_assert.h"
@@ -13,6 +14,8 @@ static void onSignal(int sig) {
 	g_sigCount++;
 	g_sigArg = sig;
 }
+
+static void onExit(void) {}
 
 int main(void) {
 	const char *path = "msvcrt_stdio_test.tmp";
@@ -82,5 +85,18 @@ int main(void) {
 	TEST_CHECK_EQ(1, g_sigCount);
 
 	TEST_CHECK(signal(99, onSignal) == SIG_ERR);
+
+	TEST_CHECK(getenv("WIBO_MSVCRT_UNSET_VARIABLE") == NULL);
+	TEST_CHECK(getenv("PATH") != NULL);
+
+	TEST_CHECK_EQ(0, atexit(onExit));
+
+	FILE *vb = fopen("msvcrt_stdio_vbuf.tmp", "wb");
+	TEST_CHECK(vb != NULL);
+	TEST_CHECK_EQ(0, setvbuf(vb, NULL, _IONBF, 0));
+	TEST_CHECK(setvbuf(vb, NULL, 99, 0) != 0);
+	TEST_CHECK_EQ(3, fwrite("abc", 1, 3, vb));
+	TEST_CHECK_EQ(0, fclose(vb));
+	TEST_CHECK(DeleteFileA("msvcrt_stdio_vbuf.tmp"));
 	return 0;
 }
