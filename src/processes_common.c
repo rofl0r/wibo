@@ -1,5 +1,6 @@
 #include "processes.h"
 
+#include "bundle.h"
 #include "common.h"
 #include "files.h"
 #include "handles.h"
@@ -285,16 +286,22 @@ char *wibo_resolveExecutable(const char *command, bool searchPath) {
 }
 
 static int spawnInternal(const StringVec *args, ProcessObject **pinOut) {
-	char **argv = xmalloc((args->len + 2) * sizeof(*argv));
+	// A bundled parent marks its children so they skip the bundle's main executable and parse a normal command line.
+	bool bundled = wibo_bundleActive();
+	size_t prefix = bundled ? 1 : 0;
+	char **argv = xmalloc((args->len + 2 + prefix) * sizeof(*argv));
 	argv[0] = (char *)"wibo";
-	for (size_t i = 0; i < args->len; ++i) {
-		argv[i + 1] = args->data[i];
+	if (bundled) {
+		argv[1] = (char *)WIBO_BUNDLE_CHILD_ARG;
 	}
-	argv[args->len + 1] = NULL;
+	for (size_t i = 0; i < args->len; ++i) {
+		argv[i + 1 + prefix] = args->data[i];
+	}
+	argv[args->len + 1 + prefix] = NULL;
 
 	if (wibo_debugEnabled) {
 		Buf cmdline = {0};
-		for (size_t i = 1; i <= args->len; ++i) {
+		for (size_t i = 1; argv[i] != NULL; ++i) {
 			if (i != 1) {
 				Buf_appendc(&cmdline, ' ');
 			}

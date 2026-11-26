@@ -1,4 +1,5 @@
 #include "common.h"
+#include "bundle.h"
 #include "entry.h"
 #include "entry_trampolines.h"
 #include "files.h"
@@ -264,13 +265,41 @@ static void appendQuotedArg(Buf *cmd, const char *arg) {
 }
 
 int main(int argc, char **argv) {
-	if (argc >= 2 && strcmp(argv[1], "path") == 0) {
+	wibo_bundleInit();
+
+	// A bundled executable runs its main program with literal arguments so that wibo's own options cannot
+	// shadow the program's. A child spawned by a bundled wibo carries WIBO_BUNDLE_CHILD_ARG, which we strip so
+	// the rest parses as a normal command line.
+	bool literalArgs = false;
+	if (argc >= 2 && strcmp(argv[1], WIBO_BUNDLE_CHILD_ARG) == 0) {
+		char **childArgv = xmalloc(argc * sizeof *childArgv);
+		childArgv[0] = argv[0];
+		for (int i = 2; i < argc; ++i) {
+			childArgv[i - 1] = argv[i];
+		}
+		childArgv[argc - 1] = NULL;
+		argc -= 1;
+		argv = childArgv;
+	} else if (wibo_bundleActive()) {
+		char **bundleArgv = xmalloc((argc + 2) * sizeof *bundleArgv);
+		bundleArgv[0] = argv[0];
+		bundleArgv[1] = wibo_bundleMainPath();
+		for (int i = 1; i < argc; ++i) {
+			bundleArgv[i + 1] = argv[i];
+		}
+		bundleArgv[argc + 1] = NULL;
+		argc += 1;
+		argv = bundleArgv;
+		literalArgs = true;
+	}
+
+	if (!literalArgs && argc >= 2 && strcmp(argv[1], "path") == 0) {
 		return handlePathCommand(argc - 2, argv + 2, argv[0]);
 	}
 
 	const char *chdirPath = NULL;
 	bool optionDebug = false;
-	bool parsingOptions = true;
+	bool parsingOptions = !literalArgs;
 	int programIndex = -1;
 	const char *cmdLine = NULL;
 
@@ -409,7 +438,7 @@ int main(int argc, char **argv) {
 	if (programIndex != -1 && argc > programIndex + 1) {
 		argIndex = programIndex + 1;
 		// With "test.exe -- test 1 2 3", treat everything after -- as the full command line
-		if (strcmp(argv[argIndex], "--") == 0) {
+		if (!literalArgs && strcmp(argv[argIndex], "--") == 0) {
 			argIndex++;
 			skipProgramName = true;
 		}
@@ -453,7 +482,7 @@ int main(int argc, char **argv) {
 
 	wibo_initializeModuleRegistry();
 
-	FILE *f = fopen(resolvedGuestPath, "rb");
+	FILE *f = wibo_openImage(resolvedGuestPath);
 	if (!f) {
 		fprintf(stderr, "Failed to open file %s: %s\n", resolvedGuestPath, strerror(errno));
 		return 1;

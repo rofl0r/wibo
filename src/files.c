@@ -1,6 +1,7 @@
 #include "files.h"
 #include "common.h"
 #include "cutil.h"
+#include "bundle.h"
 #include "errors.h"
 #include "handles.h"
 #include "strutil.h"
@@ -563,6 +564,13 @@ void files_init(void) {
 char *files_findCaseInsensitiveFile(const char *directory, const char *filename) {
 	if (directory[0] == '\0') {
 		return NULL;
+	}
+	const char *embeddedName = wibo_bundleFindName(directory, filename);
+	if (embeddedName) {
+		char *embeddedPath = joinPath(directory, embeddedName);
+		char *canonical = files_canonicalPath(embeddedPath);
+		free(embeddedPath);
+		return canonical;
 	}
 	struct stat st;
 	if (stat(directory, &st) != 0 || !S_ISDIR(st.st_mode)) {

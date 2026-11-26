@@ -1,5 +1,6 @@
 #include "version.h"
 
+#include "bundle.h"
 #include "common.h"
 #include "context.h"
 #include "cutil.h"
@@ -185,7 +186,7 @@ static bool loadVersionResource(const char *fileName, Buf *buffer) {
 	}
 
 	char *hostPath = files_pathFromWindows(fileName);
-	FILE *fp = fopen(hostPath, "rb");
+	FILE *fp = wibo_openImage(hostPath);
 	free(hostPath);
 	if (!fp) {
 		kernel32_setLastError(ERROR_FILE_NOT_FOUND);

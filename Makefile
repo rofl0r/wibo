@@ -4,6 +4,10 @@
 #   make CONFIG=debug           build build/debug/wibo
 #   make ARCH=x86_64            64-bit build in build/release-x86_64/
 #   make test [TEST=name]       build the Win32 fixtures and run them under wibo
+#   make bundle WIBO_BUNDLE_FILES="app.exe lib.dll"
+#                               build build/release/wibo-bundled with the files linked in (Linux)
+#   build/tools/wibo-bundle -o app --stub build/release/wibo app.exe lib.dll
+#                               write a standalone executable (any host with a plain wibo)
 #
 # Variables (command line or environment):
 #   CONFIG                 debug | release (default release)
@@ -17,6 +21,7 @@
 #   MINGW_CC, MINGW_WINDRES  fixture toolchain (default i686-w64-mingw32-*)
 #   TEST_TIMEOUT           seconds allowed per fixture test (default 1500)
 #   EXTRA_CFLAGS, EXTRA_LDFLAGS, EXTRA_LIBS  appended to the wibo build flags
+#   WIBO_BUNDLE_FILES      first file is the Win64 program run by the bundle, the rest are its DLLs
 
 UNAME_S := $(shell uname -s)
 
@@ -60,6 +65,8 @@ VENDOR_ABS := $(abspath $(VENDOR_DIR))
 WIBO := $(BUILD_DIR)/wibo
 TOOLS_DIR := $(BUILD_ROOT)/tools
 GENTRAMP := $(TOOLS_DIR)/gentramp
+WIBO_BUNDLE_TOOL := $(TOOLS_DIR)/wibo-bundle
+WIBO_BUNDLED := $(BUILD_DIR)/wibo-bundled
 
 # Override with TARGET_ARCH_FLAGS= when CC already selects the 32-bit target (e.g. clang --target=i586-...).
 TARGET_ARCH_FLAGS ?= $(if $(filter i686,$(ARCH)),-m32)
@@ -127,6 +134,7 @@ SHA256SUM := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || e
 CORE_SRCS := \
 	src/access.c \
 	src/async_io.c \
+	src/bundle.c \
 	src/cutil.c \
 	src/errors.c \
 	src/files.c \
@@ -245,9 +253,9 @@ ifeq ($(UNAME_S),Darwin)
 $(OBJ_DIR)/src/setup_darwin.c.o: OBJ_CFLAGS += -fms-extensions
 endif
 
-.PHONY: all clean distclean fixtures test check-mingw gentramp format check-format list-tests print-wibo FORCE
+.PHONY: all clean distclean fixtures test check-mingw gentramp bundle-tool bundle format check-format list-tests print-wibo FORCE
 
-all: $(WIBO)
+all: $(WIBO) $(WIBO_BUNDLE_TOOL)
 
 print-wibo:
 	@echo $(WIBO)
@@ -277,6 +285,57 @@ $(GENTRAMP): tools/gentramp.c | $(TOOLS_DIR)
 	$(HOST_CC) -std=gnu11 -O2 -Wall -Wextra -o $@ $<
 
 gentramp: $(GENTRAMP)
+
+$(WIBO_BUNDLE_TOOL): tools/wibo-bundle.c src/bundle_format.h | $(TOOLS_DIR)
+	$(HOST_CC) -std=gnu11 -O2 -Wall -Wextra -I src -o $@ $<
+
+bundle-tool: $(WIBO_BUNDLE_TOOL)
+
+# Linking the payload in: the pak is .incbin'd between the weak symbols that src/bundle.c looks up.
+ifneq ($(WIBO_BUNDLE_FILES),)
+ifneq ($(UNAME_S),Linux)
+$(error WIBO_BUNDLE_FILES is only supported on Linux)
+endif
+BUNDLE_PAK := $(GEN_DIR)/bundle.pak
+BUNDLE_PAYLOAD_S := $(GEN_DIR)/bundle_payload.S
+BUNDLE_PAYLOAD_O := $(OBJ_DIR)/generated/bundle_payload.S.o
+
+# The list stamp is rewritten only when the file list changes, so editing WIBO_BUNDLE_FILES rebuilds the pak.
+BUNDLE_LIST := $(GEN_DIR)/bundle.list
+
+$(BUNDLE_LIST): FORCE | $(GEN_DIR)
+	@printf '%s\n' '$(WIBO_BUNDLE_FILES)' > $@.tmp
+	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
+$(BUNDLE_PAK): $(WIBO_BUNDLE_TOOL) $(WIBO_BUNDLE_FILES) $(BUNDLE_LIST) | $(GEN_DIR)
+	$(WIBO_BUNDLE_TOOL) --pak -o $@ $(WIBO_BUNDLE_FILES)
+
+$(BUNDLE_PAYLOAD_S): $(BUNDLE_PAK) | $(GEN_DIR)
+	printf '%s\n' \
+		'    .section .rodata' \
+		'    .balign 16' \
+		'    .globl wibo_embeddedPak' \
+		'    .type wibo_embeddedPak, @object' \
+		'wibo_embeddedPak:' \
+		'    .incbin "$(abspath $(BUNDLE_PAK))"' \
+		'    .globl wibo_embeddedPakEnd' \
+		'wibo_embeddedPakEnd:' \
+		'    .section .note.GNU-stack,"",@progbits' > $@.tmp
+	mv $@.tmp $@
+
+$(BUNDLE_PAYLOAD_O): $(BUNDLE_PAYLOAD_S)
+	@mkdir -p $(@D)
+	$(CC) $(WIBO_COMMON_FLAGS) -c $< -o $@
+
+$(WIBO_BUNDLED): $(WIBO_OBJS) $(BUNDLE_PAYLOAD_O) | $(BUILD_DIR)
+	$(CC) $(WIBO_LDFLAGS) -o $@ $(WIBO_OBJS) $(BUNDLE_PAYLOAD_O) $(WIBO_LIBS)
+
+bundle: $(WIBO_BUNDLED)
+else
+bundle:
+	@echo 'error: set WIBO_BUNDLE_FILES="program.exe [lib.dll ...]" to build $(WIBO_BUNDLED)' >&2
+	@exit 1
+endif
 
 $(VENDOR_DIR)/%.dll:
 	@mkdir -p $(@D)

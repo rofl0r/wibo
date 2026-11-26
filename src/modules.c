@@ -1,5 +1,6 @@
 #include "modules.h"
 
+#include "bundle.h"
 #include "common.h"
 #include "entry.h"
 #include "entry_trampolines.h"
@@ -1497,7 +1498,7 @@ static ModuleInfo *tryLoadExternal(LoadContext *ctx, const char *path) {
 	loadUnlock(ctx);
 
 	DEBUG_LOG("  loading external module from %s\n", path);
-	FILE *file = fopen(path, "rb");
+	FILE *file = wibo_openImage(path);
 	if (!file) {
 		perror("loadModule");
 		free(key);
@@ -1831,7 +1832,7 @@ Executable *wibo_executableFromModule(HMODULE module) {
 		return NULL;
 	}
 	if (!info->executable && info->resolvedPath && info->resolvedPath[0] != '\0') {
-		FILE *file = fopen(info->resolvedPath, "rb");
+		FILE *file = wibo_openImage(info->resolvedPath);
 		if (!file) {
 			perror("executableFromModule");
 			return NULL;

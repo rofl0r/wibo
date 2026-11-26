@@ -89,6 +89,29 @@ wibo --cmdline 'test.exe a b c' path/to/test.exe
 wibo -- test.exe a b c
 ```
 
+### Bundling a program into one Linux executable (experimental)
+
+`wibo-bundle` packs a PE program and its DLLs into a single ELF. The bundle runs the program
+with wibo's loader and serves the bundled DLLs and spawned children from memory.
+
+```sh
+make                                  # builds build/tools/wibo-bundle
+build/tools/wibo-bundle -o app --stub build/release/wibo prog.exe lib.dll
+./app arg1 arg2                       # arguments are passed literally
+```
+
+Or embed the payload into a new wibo build (Linux only):
+
+```sh
+make bundle WIBO_BUNDLE_FILES="prog.exe lib.dll"   # -> build/release/wibo-bundled
+```
+
+Notes:
+- The first file is the program; the rest are DLLs. Names match case-insensitively. Use `--pak -o out.pak ...` to write only the payload.
+- Bundled programs receive their arguments literally: wibo's own options (`-C`, `--cmdline`, `--`) do not apply. `WIBO_DEBUG` still works.
+- A first argument of exactly `--bundle-child` is consumed as an internal marker.
+- Only PE32 (32-bit) programs are supported. Win64 (PE32+) images are not yet loadable by wibo.
+
 ## Tests
 
 Self-checking Windows fixtures are built with a 32-bit MinGW cross toolchain (`i686-w64-mingw32-gcc` and `i686-w64-mingw32-windres`).
