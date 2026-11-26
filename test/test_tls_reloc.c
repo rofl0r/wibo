@@ -18,7 +18,11 @@ typedef DWORD(__stdcall *tls_module_index_fn)(void);
 
 static void **module_tls_array(void) {
 	void **ptr = NULL;
+#if defined(__x86_64__)
+	__asm__ __volatile__("movq %%gs:0x58, %0" : "=r"(ptr));
+#else
 	__asm__ __volatile__("movl %%fs:0x2C, %0" : "=r"(ptr));
+#endif
 	return ptr;
 }
 

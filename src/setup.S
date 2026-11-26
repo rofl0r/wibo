@@ -96,14 +96,21 @@ ASM_GLOBAL(STUB_THUNK_SYMBOL, @function)
 #define STUB_THUNK_SYMBOL _Z9stubThunkILj\()\number\()EEvv
 ASM_GLOBAL(STUB_THUNK_SYMBOL, @function)
 #endif
+	#ifdef WIBO_GUEST64
+	mov ecx, \number
+	jmp SYMBOL_NAME(thunk_entry_stubBase)
+	#else
 	pop eax
 	push \number
 	push eax
 	jmp SYMBOL_NAME(thunk_entry_stubBase)
+	#endif
 ASM_END(STUB_THUNK_SYMBOL)
 .endm
 
+#ifndef WIBO_GUEST64
 .code32
+#endif
 stubThunkX 0
 stubThunkX 1
 stubThunkX 2

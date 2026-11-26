@@ -56,6 +56,13 @@ typedef unsigned int GUEST_PTR;
 #endif
 #define GUEST_NULL ((GUEST_PTR)0)
 
+// PE images whose bitness differs from the runtime's cannot be run by this build.
+#ifdef WIBO_GUEST64
+#define GUEST_IS_64BIT true
+#else
+#define GUEST_IS_64BIT false
+#endif
+
 #if defined(__x86_64__) && !defined(WIBO_GUEST64)
 static inline GUEST_PTR toGuestPtr(const void *addr) {
 	uint64_t addr64 = (uint64_t)(uintptr_t)addr;

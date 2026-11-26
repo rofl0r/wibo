@@ -472,7 +472,27 @@ typedef struct {
 	uint32_t Characteristics;
 } ImageTlsDirectory32;
 
-static const size_t kMinTlsDirectorySize = offsetof(ImageTlsDirectory32, SizeOfZeroFill);
+typedef struct {
+	uint64_t StartAddressOfRawData;
+	uint64_t EndAddressOfRawData;
+	uint64_t AddressOfIndex;
+	uint64_t AddressOfCallBacks;
+	uint32_t SizeOfZeroFill;
+	uint32_t Characteristics;
+} ImageTlsDirectory64;
+
+// Bitness-independent view of the TLS directory fields used by wibo_initializeModuleTls.
+typedef struct {
+	uint64_t StartAddressOfRawData;
+	uint64_t EndAddressOfRawData;
+	uint64_t AddressOfIndex;
+	uint64_t AddressOfCallBacks;
+	uint32_t SizeOfZeroFill;
+	uint32_t Characteristics;
+} TlsDirectoryFields;
+
+static const size_t kMinTlsDirectorySize32 = offsetof(ImageTlsDirectory32, SizeOfZeroFill);
+static const size_t kMinTlsDirectorySize64 = offsetof(ImageTlsDirectory64, SizeOfZeroFill);
 
 static uintptr_t resolveModuleAddress(const Executable *exec, uintptr_t address) {
 	if (address == 0) {
@@ -644,13 +664,12 @@ static BOOL callDllMain(ModuleInfo *info, DWORD reason, LPVOID reserved) {
 	if (!info->executable || !info->executable->entryPoint) {
 		return TRUE;
 	}
-#ifndef WIBO_GUEST64
-	if (info->executable->is64Bit) {
-		DEBUG_LOG("  callDllMain: %s is PE32+ (Win64); not supported yet\n", info->normalizedName);
+	if (info->executable->is64Bit != GUEST_IS_64BIT) {
+		DEBUG_LOG("  callDllMain: %s is %s; not loadable by this runtime\n", info->normalizedName,
+		          info->executable->is64Bit ? "PE32+" : "PE32");
 		kernel32_setLastError(ERROR_BAD_EXE_FORMAT);
 		return FALSE;
 	}
-#endif
 
 	kernel32_setLastError(ERROR_SUCCESS);
 
@@ -755,7 +774,14 @@ static bool ensureModuleReady(ModuleInfo *info) {
 			Executable_free(exec);
 			return false;
 		}
-		info->executable = exec;
+		if (exec->is64Bit != GUEST_IS_64BIT) {
+			// Embedded CRT images are PE32, so a Win64 runtime keeps only the stub exports for them.
+			DEBUG_LOG("  %s is not %s; using stub exports only\n", info->originalName,
+			          GUEST_IS_64BIT ? "PE32+" : "PE32");
+			Executable_free(exec);
+		} else {
+			info->executable = exec;
+		}
 	}
 	ensureExportsInitialized(info);
 	if (!info->executable) {
@@ -1094,17 +1120,27 @@ bool wibo_initializeModuleTls(ModuleInfo *module) {
 	if (!exec) {
 		return true;
 	}
-	if (exec->tlsDirectoryRVA == 0 || exec->tlsDirectorySize < kMinTlsDirectorySize) {
+	const size_t minTlsDirectorySize = exec->is64Bit ? kMinTlsDirectorySize64 : kMinTlsDirectorySize32;
+	if (exec->tlsDirectoryRVA == 0 || exec->tlsDirectorySize < minTlsDirectorySize) {
 		return true;
 	}
 	const uint8_t *tlsDirectoryRaw = Executable_fromRVA(exec, exec->tlsDirectoryRVA);
 	if (!tlsDirectoryRaw) {
 		return false;
 	}
-	// TLS directory may be smaller than ImageTlsDirectory32; remaining fields are zero-initialized
-	ImageTlsDirectory32 tlsDirectory = {0};
-	size_t copySize = exec->tlsDirectorySize < sizeof(tlsDirectory) ? exec->tlsDirectorySize : sizeof(tlsDirectory);
-	memcpy(&tlsDirectory, tlsDirectoryRaw, copySize);
+	// The directory may be smaller than the full struct; the remaining fields stay zero.
+	TlsDirectoryFields tlsDirectory = {0};
+	if (exec->is64Bit) {
+		ImageTlsDirectory64 raw = {0};
+		memcpy(&raw, tlsDirectoryRaw, exec->tlsDirectorySize < sizeof(raw) ? exec->tlsDirectorySize : sizeof(raw));
+		tlsDirectory = (TlsDirectoryFields){raw.StartAddressOfRawData, raw.EndAddressOfRawData, raw.AddressOfIndex,
+		                                    raw.AddressOfCallBacks, raw.SizeOfZeroFill, raw.Characteristics};
+	} else {
+		ImageTlsDirectory32 raw = {0};
+		memcpy(&raw, tlsDirectoryRaw, exec->tlsDirectorySize < sizeof(raw) ? exec->tlsDirectorySize : sizeof(raw));
+		tlsDirectory = (TlsDirectoryFields){raw.StartAddressOfRawData, raw.EndAddressOfRawData, raw.AddressOfIndex,
+		                                    raw.AddressOfCallBacks, raw.SizeOfZeroFill, raw.Characteristics};
+	}
 
 	ModuleTlsInfo *info = &module->tlsInfo;
 	info->templateSize = (tlsDirectory.EndAddressOfRawData > tlsDirectory.StartAddressOfRawData)
@@ -1112,10 +1148,10 @@ bool wibo_initializeModuleTls(ModuleInfo *module) {
 							 : 0;
 	info->zeroFillSize = tlsDirectory.SizeOfZeroFill;
 	info->characteristics = tlsDirectory.Characteristics;
-	info->templateData = (uint8_t *)resolveModuleAddress(exec, tlsDirectory.StartAddressOfRawData);
-	info->indexLocation = (DWORD *)resolveModuleAddress(exec, tlsDirectory.AddressOfIndex);
+	info->templateData = (uint8_t *)resolveModuleAddress(exec, (uintptr_t)tlsDirectory.StartAddressOfRawData);
+	info->indexLocation = (DWORD *)resolveModuleAddress(exec, (uintptr_t)tlsDirectory.AddressOfIndex);
 	vec_clear(&info->callbacks);
-	uintptr_t callbacksArray = resolveModuleAddress(exec, tlsDirectory.AddressOfCallBacks);
+	uintptr_t callbacksArray = resolveModuleAddress(exec, (uintptr_t)tlsDirectory.AddressOfCallBacks);
 	if (callbacksArray) {
 		const GUEST_PTR *callbackPtr = (const GUEST_PTR *)callbacksArray;
 		while (*callbackPtr) {

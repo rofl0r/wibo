@@ -21,7 +21,7 @@
 #   WIBO_ENABLE_LIBURING   1 enables the io_uring backend on Linux (default 0)
 #   WIBO_LIBURING_STATIC   1 links liburing statically (default 0)
 #   WIBO_ENABLE_WINE_DLLS  0 disables downloading and embedding the Wine CRT DLLs
-#   MINGW_CC, MINGW_WINDRES  fixture toolchain (default i686-w64-mingw32-*)
+#   MINGW_CC, MINGW_WINDRES  fixture toolchain (default i686-w64-mingw32-*, or x86_64-* when WIN64=1)
 #   TEST_TIMEOUT           seconds allowed per fixture test (default 1500)
 #   EXTRA_CFLAGS, EXTRA_LDFLAGS, EXTRA_LIBS  appended to the wibo build flags
 #   WIBO_BUNDLE_FILES      first file is the Win64 program run by the bundle, the rest are its DLLs
@@ -61,8 +61,9 @@ WIBO_ENABLE_LIBURING ?= 0
 WIBO_LIBURING_STATIC ?= 0
 WIBO_ENABLE_WINE_DLLS ?= 1
 TEST_TIMEOUT ?= 1500
-MINGW_CC ?= i686-w64-mingw32-gcc
-MINGW_WINDRES ?= i686-w64-mingw32-windres
+MINGW_ARCH := $(if $(filter 1,$(WIN64)),x86_64,i686)
+MINGW_CC ?= $(MINGW_ARCH)-w64-mingw32-gcc
+MINGW_WINDRES ?= $(MINGW_ARCH)-w64-mingw32-windres
 CLANG_FORMAT ?= clang-format
 
 BUILD_ROOT := build
@@ -72,7 +73,7 @@ GEN_DIR := $(BUILD_DIR)/generated
 TEST_BIN_DIR := $(BUILD_DIR)/test
 VENDOR_DIR := $(BUILD_ROOT)/vendor
 VENDOR_ABS := $(abspath $(VENDOR_DIR))
-WIBO := $(BUILD_DIR)/wibo
+WIBO := $(BUILD_DIR)/wibo$(if $(filter 1,$(WIN64)),64)
 TOOLS_DIR := $(BUILD_ROOT)/tools
 GENTRAMP := $(TOOLS_DIR)/gentramp
 WIBO_BUNDLE_TOOL := $(TOOLS_DIR)/wibo-bundle
