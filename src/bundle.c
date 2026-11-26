@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __linux__
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -463,12 +462,8 @@ static void printBundleUsage(const char *exeName, FILE *out) {
 	fprintf(out, "\n");
 	fprintf(out, "Packs FILE... into the standalone executable OUT. The first FILE is the program that runs;\n");
 	fprintf(out, "the others are available to it by basename. All files must be images of this build's\n");
-	fprintf(out, "architecture (PE32 for a default build, PE32+ for WIN64=1). Linux only.\n");
+	fprintf(out, "architecture (PE32 for a default build, PE32+ for WIN64=1).\n");
 }
-
-#endif
-
-#ifdef __linux__
 
 int wibo_bundleMain(int argc, char **argv, const char *argv0) {
 	if (argc >= 1 && (strcmp(argv[0], "-h") == 0 || strcmp(argv[0], "--help") == 0)) {
@@ -579,28 +574,3 @@ int wibo_bundleMain(int argc, char **argv, const char *argv0) {
 	}
 	return 0;
 }
-
-#else
-
-int wibo_bundleMain(int argc, char **argv, const char *argv0) {
-	(void)argc;
-	(void)argv;
-	fprintf(stderr, "%s: --bundle is only supported on Linux\n", argv0);
-	return 1;
-}
-
-void wibo_bundleInit(const char *argv0) { (void)argv0; }
-
-bool wibo_bundleActive(void) { return false; }
-
-char *wibo_bundleMainPath(void) { return NULL; }
-
-const char *wibo_bundleFindName(const char *dir, const char *name) {
-	(void)dir;
-	(void)name;
-	return NULL;
-}
-
-FILE *wibo_openImage(const char *path) { return fopen(path, "rb"); }
-
-#endif

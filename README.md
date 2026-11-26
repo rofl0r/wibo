@@ -102,7 +102,7 @@ wibo --cmdline 'test.exe a b c' path/to/test.exe
 wibo -- test.exe a b c
 ```
 
-### Bundling a program into one Linux executable (experimental)
+### Bundling a program into one executable (experimental)
 
 `wibo --bundle` packs a PE program and its DLLs into a single executable. The output is a copy of the
 running wibo followed by a payload, so it needs no other files. The bundle runs its program with wibo's
@@ -122,7 +122,7 @@ loader and serves the bundled DLLs, and any children it spawns, from memory.
   Run wibo under a path it can resolve.
 - A bundle receives its arguments literally: wibo's own options (`-C`, `--cmdline`, `--`) do not apply.
   `--bundle` is passed through to the program as well. `WIBO_DEBUG` still works.
-- Bundling is Linux-only. `wibo --bundle --help` prints the usage.
+- `wibo --bundle --help` prints the usage.
 - `make test-bundle` (or `make WIN64=1 test-bundle`) checks a bundle with a DLL, a bundle without DLLs,
   argument pass-through, and the packer's name and architecture rules. To run an i386 build on a 64-bit
   host, set `BUNDLE_RUNNER=qemu-i386`.
