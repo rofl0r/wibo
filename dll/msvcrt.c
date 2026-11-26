@@ -979,7 +979,7 @@ int *CDECL msvcrt___p__fmode(void) {
 	return &g_fmode;
 }
 
-int CDECL msvcrt_fprintf(void *stream, LPCSTR format, ...) {
+int CDECL_VARARG msvcrt_fprintf(void *stream, LPCSTR format, ...) {
 	HOST_CONTEXT_GUARD();
 	FILE *f = hostStream(stream);
 	if (!f) {
@@ -1003,7 +1003,7 @@ int CDECL msvcrt_vfprintf(void *stream, LPCSTR format, void *ap) {
 	return printToStream(f, format, &src);
 }
 
-int CDECL msvcrt_printf(LPCSTR format, ...) {
+int CDECL_VARARG msvcrt_printf(LPCSTR format, ...) {
 	HOST_CONTEXT_GUARD();
 	va_list ap;
 	va_start(ap, format);

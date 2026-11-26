@@ -39,10 +39,13 @@
 #define WINAPI _CC_STDCALL
 #define CDECL _CC_CDECL
 #define CDECL_NO_CONV _CC_CDECL __attribute__((force_align_arg_pointer))
+#define CDECL_VARARG _CC_CDECL
 #else
 #define WINAPI _CC_STDCALL __attribute__((fastcall))
 #define CDECL _CC_CDECL __attribute__((fastcall))
 #define CDECL_NO_CONV _CC_CDECL __attribute__((cdecl, force_align_arg_pointer))
+// GCC ignores fastcall on variadic functions, so declare them cdecl.
+#define CDECL_VARARG _CC_CDECL __attribute__((cdecl))
 #endif
 
 // Used for host-to-guest calls
