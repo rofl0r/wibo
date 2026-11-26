@@ -14,6 +14,9 @@
 #include <sys/syscall.h>
 #include <ucontext.h>
 #include <unistd.h>
+#if defined(__linux__) && defined(__x86_64__)
+#include <asm/prctl.h>
+#endif
 
 static LPTOP_LEVEL_EXCEPTION_FILTER g_topLevelExceptionFilter = NULL;
 static UINT g_processErrorMode = 0;
@@ -111,6 +114,28 @@ static void faultRegisters(void *uctx, uintptr_t *ip, uintptr_t *err) {
 #endif
 }
 
+#if defined(__linux__) && defined(__x86_64__)
+// A 32-bit guest keeps its TEB in fs, so the host's TLS is unreachable until the host fs base is back. The
+// host-to-guest thunks save that base in TEB.HostFsBase. A fault from the 64-bit host (cs unchanged) leaves fs alone.
+__attribute__((no_stack_protector)) static void restoreHostFsForGuestFault(void *uctx) {
+	const ucontext_t *uc = uctx;
+	uint16_t handlerCs;
+	__asm__("mov %%cs, %0" : "=r"(handlerCs));
+	if ((uint16_t)(uc->uc_mcontext.gregs[REG_CSGSFS] & 0xffff) == handlerCs) {
+		return;
+	}
+	unsigned long guestFs = 0;
+	if (syscall(SYS_arch_prctl, ARCH_GET_FS, &guestFs) != 0 || guestFs == 0) {
+		return;
+	}
+	TEB *teb = (TEB *)(uintptr_t)guestFs;
+	// The thunks take the guest stack from TEB.CurrentStackPointer. While the guest runs, that field holds the host
+	// stack, so it has to be set to the faulting guest esp before the filter is called.
+	teb->CurrentStackPointer = (void *)(uintptr_t)(uint32_t)uc->uc_mcontext.gregs[REG_RSP];
+	syscall(SYS_arch_prctl, ARCH_SET_FS, (unsigned long)(uintptr_t)teb->HostFsBase);
+}
+#endif
+
 // The stack protector reads the canary through %gs on i386, which is not reliable in a signal frame.
 // SA_NODEFER is not set, so a fault while this handler runs is fatal (the kernel resets to SIG_DFL).
 __attribute__((no_stack_protector)) static _Noreturn void reportHostFault(int sig, siginfo_t *info, void *uctx) {
@@ -136,6 +161,9 @@ __attribute__((no_stack_protector)) static _Noreturn void reportHostFault(int si
 	} else {
 		record.ExceptionCode = STATUS_FLOAT_DIVIDE_BY_ZERO;
 	}
+#if defined(__linux__) && defined(__x86_64__)
+	restoreHostFsForGuestFault(uctx);
+#endif
 	reportUnhandledException(&record);
 }
 
