@@ -166,7 +166,8 @@ CORE_SRCS := \
 	src/resources.c \
 	src/setup.S \
 	src/strutil.c \
-	src/tls.c
+	src/tls.c \
+	src/unwind.c
 
 KERNEL32_NAMES := debugapi errhandlingapi fibersapi fileapi handleapi heapapi interlockedapi \
 	ioapiset libloaderapi memoryapi namedpipeapi processenv processthreadsapi profileapi \

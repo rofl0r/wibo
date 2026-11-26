@@ -3,6 +3,7 @@
 #include "heap.h"
 #include "kernel32/internal.h"
 #include "modules.h"
+#include "unwind.h"
 #include "types.h"
 
 #include <stddef.h>
@@ -145,6 +146,7 @@ typedef struct {
 	PEImageDataDirectory baseRelocationTable;
 	PEImageDataDirectory delayImportDescriptor;
 	PEImageDataDirectory tlsTable;
+	PEImageDataDirectory exceptionTable;
 } PEOptionalHeader;
 
 typedef struct {
@@ -263,6 +265,8 @@ void Executable_free(Executable *self) {
 		wibo_heap_virtualFree(self->imageBase, 0, MEM_RELEASE);
 		self->imageBase = NULL;
 	}
+	wibo_unregisterFunctionTable(self->functionTable);
+	self->functionTable = NULL;
 	vec_free(&self->sections);
 	free(self);
 }
@@ -391,6 +395,10 @@ static void resetExecutableState(Executable *executable) {
 	executable->delayImportDirectorySize = 0;
 	executable->tlsDirectoryRVA = 0;
 	executable->tlsDirectorySize = 0;
+	executable->exceptionDirectoryRVA = 0;
+	executable->exceptionDirectorySize = 0;
+	wibo_unregisterFunctionTable(executable->functionTable);
+	executable->functionTable = NULL;
 	executable->execMapped = false;
 	executable->importsResolved = false;
 	executable->importsResolving = false;
@@ -439,6 +447,7 @@ static bool readOptionalHeader(const PeInputView *source, uint64_t offset, uint1
 		out->baseRelocationTable = h.baseRelocationTable;
 		out->delayImportDescriptor = h.delayImportDescriptor;
 		out->tlsTable = h.tlsTable;
+		out->exceptionTable = h.exceptionTable;
 		return true;
 	}
 
@@ -471,6 +480,7 @@ static bool readOptionalHeader(const PeInputView *source, uint64_t offset, uint1
 		out->baseRelocationTable = h.baseRelocationTable;
 		out->delayImportDescriptor = h.delayImportDescriptor;
 		out->tlsTable = h.tlsTable;
+		out->exceptionTable = h.exceptionTable;
 		return true;
 	}
 
@@ -580,6 +590,8 @@ static bool loadPEFromSource(Executable *executable, const PeInputView *source, 
 	executable->delayImportDirectorySize = optional.delayImportDescriptor.size;
 	executable->tlsDirectoryRVA = optional.tlsTable.virtualAddress;
 	executable->tlsDirectorySize = optional.tlsTable.size;
+	executable->exceptionDirectoryRVA = optional.exceptionTable.virtualAddress;
+	executable->exceptionDirectorySize = optional.exceptionTable.size;
 	executable->is64Bit = optional.is64;
 	executable->execMapped = exec;
 	executable->importsResolved = false;
@@ -750,6 +762,16 @@ static bool loadPEFromSource(Executable *executable, const PeInputView *source, 
 
 	executable->entryPoint =
 		optional.addressOfEntryPoint ? Executable_fromRVA(executable, optional.addressOfEntryPoint) : NULL;
+
+	// PE32 exception directories are not .pdata; only x64 images have unwind tables.
+	if (executable->is64Bit && executable->exceptionDirectorySize >= sizeof(WiboRuntimeFunction) &&
+		executable->exceptionDirectoryRVA < executable->imageSize &&
+		executable->exceptionDirectorySize <= executable->imageSize - executable->exceptionDirectoryRVA) {
+		size_t count = executable->exceptionDirectorySize / sizeof(WiboRuntimeFunction);
+		const WiboRuntimeFunction *entries = Executable_fromRVA(executable, executable->exceptionDirectoryRVA);
+		executable->functionTable =
+			wibo_registerFunctionTable(executable->imageBase, executable->imageSize, entries, count);
+	}
 
 	kernel32_setLastError(ERROR_SUCCESS);
 	return true;

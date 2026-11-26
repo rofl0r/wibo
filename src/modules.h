@@ -55,6 +55,10 @@ struct Executable {
 	uint32_t delayImportDirectorySize;
 	uint32_t tlsDirectoryRVA;
 	uint32_t tlsDirectorySize;
+	uint32_t exceptionDirectoryRVA;
+	uint32_t exceptionDirectorySize;
+	// Registered .pdata copy (PE32+ only); owned by the module registry in unwind.c.
+	struct WiboFunctionTable *functionTable;
 	bool execMapped;
 	bool importsResolved;
 	bool importsResolving;
