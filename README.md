@@ -213,7 +213,10 @@ It serves the bundled DLLs, and any children it spawns, from memory.
 - `_putenv_s` rejects a name that contains `=` with `EINVAL`. Windows
   accepts it.
 - The wide environment functions (`_wgetenv`, `_wputenv`,
-  `_wputenv_s`, `_wgetenv_s`) are not exported.
+  `_wputenv_s`, `_wgetenv_s`) convert one byte per UTF-16 unit. Names
+  or values outside Latin-1 are lossy.
+- A `_wgetenv` result is replaced when the variable changes, so an
+  older pointer for that name may dangle.
 - `_isatty` is not exported. msvcrt has no file descriptor table to
   map descriptors onto host descriptors.
 
