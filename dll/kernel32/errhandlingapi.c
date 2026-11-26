@@ -11,6 +11,7 @@
 
 #include <errno.h>
 #include <signal.h>
+#include <stddef.h>
 #include <string.h>
 #include <sys/syscall.h>
 #include <ucontext.h>
@@ -74,10 +75,29 @@ __attribute__((no_stack_protector)) static void faultReportAppendHex(FaultReport
 // then the process exits with the low byte of the exception code, as Wine does on Linux.
 // A host fault has no resumable context here, so the process exits even if the filter returns
 // EXCEPTION_CONTINUE_EXECUTION. ContextRecord is passed as NULL.
+#if !defined(WIBO_GUEST64)
+// Guest handlers take 32-bit pointers, but host stacks lie above 4 GB on x86_64. The exception state is therefore
+// copied to the guest stack, where the guest's own 32-bit code can address it.
+typedef struct {
+	EXCEPTION_RECORD record;
+	CONTEXT context;
+	EXCEPTION_POINTERS pointers;
+} GuestExceptionFrame;
+
+static GuestExceptionFrame *stageGuestExceptionFrame(TEB *teb, const EXCEPTION_RECORD *record, const CONTEXT *ctx);
+#endif
+
 __attribute__((no_stack_protector)) static _Noreturn void reportUnhandledException(EXCEPTION_RECORD *record) {
 	if (g_topLevelExceptionFilter) {
+#if defined(__x86_64__) && !defined(WIBO_GUEST64)
+		GuestExceptionFrame *frame = stageGuestExceptionFrame(currentThreadTeb, record, NULL);
+		if (frame) {
+			call_LPTOP_LEVEL_EXCEPTION_FILTER(g_topLevelExceptionFilter, &frame->pointers);
+		}
+#else
 		EXCEPTION_POINTERS pointers = {toGuestPtr(record), 0};
 		call_LPTOP_LEVEL_EXCEPTION_FILTER(g_topLevelExceptionFilter, &pointers);
+#endif
 	}
 	FaultReport report;
 	report.len = 0;
@@ -98,15 +118,36 @@ __attribute__((no_stack_protector)) static _Noreturn void reportUnhandledExcepti
 	_exit((int)record->ExceptionCode);
 }
 
-#if defined(__i386__)
+#if !defined(WIBO_GUEST64)
 _Static_assert(sizeof(CONTEXT) == 716, "CONTEXT must match the i386 Windows layout");
+
+// Copies the exception state below the guest stack pointer (TEB.CurrentStackPointer). Returns NULL outside a
+// host-to-guest call, when that pointer is not a guest stack. A NULL ctx gives the handlers a NULL ContextRecord.
+__attribute__((no_stack_protector)) static GuestExceptionFrame *stageGuestExceptionFrame(TEB *teb,
+																						 const EXCEPTION_RECORD *record,
+																						 const CONTEXT *ctx) {
+	if (!teb->GuestBoundary) {
+		return NULL;
+	}
+	uintptr_t sp = (uintptr_t)teb->CurrentStackPointer;
+	GuestExceptionFrame *frame = (GuestExceptionFrame *)((sp - sizeof(*frame)) & ~(uintptr_t)15);
+	frame->record = *record;
+	if (ctx) {
+		frame->context = *ctx;
+	} else {
+		memset(&frame->context, 0, sizeof(frame->context));
+	}
+	frame->pointers.ExceptionRecord = toGuestPtr(&frame->record);
+	frame->pointers.ContextRecord = ctx ? toGuestPtr(&frame->context) : 0;
+	return frame;
+}
 
 // Walks the guest's fs:[0] chain. A frame is only considered when it lies between the faulting or raising guest code
 // and the innermost host-to-guest boundary. Frames past the boundary belong to guest callers of host code, and calling
 // their handlers would skip the host frames in between. Returns true only if a handler returned
-// EXCEPTION_CONTINUE_EXECUTION; the handler may have changed ctx.
-__attribute__((no_stack_protector)) static bool guestDispatchRegistrations(TEB *teb, EXCEPTION_RECORD *record,
-																		  CONTEXT *ctx, uintptr_t lowerBound) {
+// EXCEPTION_CONTINUE_EXECUTION; the handler may have changed the staged context.
+__attribute__((no_stack_protector)) static bool walkGuestRegistrations(TEB *teb, GuestExceptionFrame *staged,
+																	   uintptr_t lowerBound) {
 	uintptr_t upperBound = (uintptr_t)teb->GuestBoundary;
 	GUEST_PTR frame = teb->Tib.ExceptionList;
 	while (frame != (GUEST_PTR)-1) {
@@ -116,7 +157,8 @@ __attribute__((no_stack_protector)) static bool guestDispatchRegistrations(TEB *
 		const EXCEPTION_REGISTRATION *registration = (const EXCEPTION_REGISTRATION *)(uintptr_t)frame;
 		GUEST_PTR next = registration->Next;
 		LONG disposition = call_PEXCEPTION_ROUTINE_CDECL((PEXCEPTION_ROUTINE_CDECL)(uintptr_t)registration->Handler,
-														 toGuestPtr(record), frame, toGuestPtr(ctx), 0);
+														 staged->pointers.ExceptionRecord, frame,
+														 staged->pointers.ContextRecord, 0);
 		if (disposition == ExceptionContinueExecution) {
 			return true;
 		}
@@ -128,6 +170,32 @@ __attribute__((no_stack_protector)) static bool guestDispatchRegistrations(TEB *
 	return false;
 }
 
+// Runs the guest handlers for record with ctx as their context. The guest stack pointer is moved below the staged
+// frame while they run. On success, ctx receives the context the handler left.
+__attribute__((no_stack_protector)) static bool dispatchGuestRegistrations(TEB *teb, EXCEPTION_RECORD *record,
+																		   CONTEXT *ctx, uintptr_t lowerBound) {
+	void *savedSp = teb->CurrentStackPointer;
+	GuestExceptionFrame *staged = stageGuestExceptionFrame(teb, record, ctx);
+	if (!staged) {
+		return false;
+	}
+	teb->CurrentStackPointer = staged;
+	bool continued = walkGuestRegistrations(teb, staged, lowerBound);
+	teb->CurrentStackPointer = savedSp;
+	if (continued) {
+		*ctx = staged->context;
+	}
+	return continued;
+}
+
+// The g2h thunk records the guest's stack at its entry, as the offsets below from TEB.CurrentStackPointer. Its
+// pushes differ by host: the i386 host pushes only EBP, while the x86_64 host pushes EBP, ESI, EDI, and EBX.
+#if defined(__x86_64__)
+enum { kRaiseSlotEbp = 12, kRaiseSlotEip = 16, kRaiseSlotEsp = 20 };
+#else
+enum { kRaiseSlotEbp = 0, kRaiseSlotEip = 4, kRaiseSlotEsp = 8 };
+#endif
+
 // A continuable RaiseException from guest code returns normally when a handler continues without changing the
 // context. Redirecting it would require discarding the RaiseException host frame and its thunk, which is not
 // supported, so such a handler falls through to the unhandled path.
@@ -137,17 +205,16 @@ __attribute__((no_stack_protector)) static bool resumeRaisedException(EXCEPTION_
 	if (!teb->GuestBoundary || (record->ExceptionFlags & EXCEPTION_NONCONTINUABLE)) {
 		return false;
 	}
-	// The g2h thunk stores its guest stack slot here: [slot] holds the guest ebp and [slot + 4] the return address.
 	uintptr_t slot = (uintptr_t)teb->CurrentStackPointer;
 	CONTEXT original;
 	memset(&original, 0, sizeof(original));
 	original.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-	original.Ebp = *(const uint32_t *)slot;
-	original.Eip = *(const uint32_t *)(slot + 4);
-	original.Esp = (uint32_t)(slot + 8);
+	original.Ebp = *(const uint32_t *)(slot + kRaiseSlotEbp);
+	original.Eip = *(const uint32_t *)(slot + kRaiseSlotEip);
+	original.Esp = (uint32_t)(slot + kRaiseSlotEsp);
 	record->ExceptionAddress = original.Eip;
 	CONTEXT ctx = original;
-	if (!guestDispatchRegistrations(teb, record, &ctx, slot + 8)) {
+	if (!dispatchGuestRegistrations(teb, record, &ctx, slot + kRaiseSlotEsp)) {
 		return false;
 	}
 	return memcmp(&ctx, &original, sizeof(ctx)) == 0;
@@ -158,41 +225,74 @@ __attribute__((no_stack_protector)) static bool resumeRaisedException(EXCEPTION_
 // stack overflow be reported too. Only the main thread gets one; other threads report on their own stack.
 static char g_faultAltStack[64 * 1024];
 
+// The guest's 32-bit registers as the ucontext stores them. On x86_64 hosts they occupy the low halves of the 64-bit
+// slots, and the high halves are dropped when the guest context is rebuilt.
+#if defined(__linux__) && defined(__x86_64__)
+#define GREG_EAX REG_RAX
+#define GREG_EBX REG_RBX
+#define GREG_ECX REG_RCX
+#define GREG_EDX REG_RDX
+#define GREG_ESI REG_RSI
+#define GREG_EDI REG_RDI
+#define GREG_EBP REG_RBP
+#define GREG_ESP REG_RSP
+#define GREG_EIP REG_RIP
+#elif defined(__linux__) && defined(__i386__)
+#define GREG_EAX REG_EAX
+#define GREG_EBX REG_EBX
+#define GREG_ECX REG_ECX
+#define GREG_EDX REG_EDX
+#define GREG_ESI REG_ESI
+#define GREG_EDI REG_EDI
+#define GREG_EBP REG_EBP
+#define GREG_ESP REG_ESP
+#define GREG_EIP REG_EIP
+#endif
+
+// The guest-running state that a fault dispatch has to put back before a handler can resume the guest.
+typedef struct {
+	void *hostSp;
+	uint16_t hostFs;
+	uint16_t hostGs;
+} GuestFaultState;
+
 static void faultRegisters(void *uctx, uintptr_t *ip, uintptr_t *err) {
 	*ip = 0;
 	*err = 0;
 #if defined(__linux__) && (defined(__x86_64__) || defined(__i386__))
 	ucontext_t *uc = uctx;
-#if defined(__x86_64__)
-	*ip = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
-#else
-	*ip = (uintptr_t)uc->uc_mcontext.gregs[REG_EIP];
-#endif
+	*ip = (uintptr_t)uc->uc_mcontext.gregs[GREG_EIP];
 	*err = (uintptr_t)uc->uc_mcontext.gregs[REG_ERR];
 #else
 	(void)uctx;
 #endif
 }
 
-#if defined(__linux__) && defined(__x86_64__)
+#if defined(__linux__) && defined(__x86_64__) && !defined(WIBO_GUEST64)
 // A 32-bit guest keeps its TEB in fs, so the host's TLS is unreachable until the host fs base is back. The
-// host-to-guest thunks save that base in TEB.HostFsBase. A fault from the 64-bit host (cs unchanged) leaves fs alone.
-__attribute__((no_stack_protector)) static void restoreHostFsForGuestFault(void *uctx) {
+// host-to-guest thunks save that base in TEB.HostFsBase. A fault from the 64-bit host (cs unchanged) leaves fs alone
+// and returns NULL. Otherwise the TEB is returned with TEB.CurrentStackPointer set to the faulting guest esp.
+__attribute__((no_stack_protector)) static TEB *restoreHostFsForGuestFault(void *uctx, GuestFaultState *state) {
 	const ucontext_t *uc = uctx;
 	uint16_t handlerCs;
 	__asm__("mov %%cs, %0" : "=r"(handlerCs));
 	if ((uint16_t)(uc->uc_mcontext.gregs[REG_CSGSFS] & 0xffff) == handlerCs) {
-		return;
+		return NULL;
 	}
 	unsigned long guestFs = 0;
 	if (syscall(SYS_arch_prctl, ARCH_GET_FS, &guestFs) != 0 || guestFs == 0) {
-		return;
+		return NULL;
 	}
 	TEB *teb = (TEB *)(uintptr_t)guestFs;
-	// The thunks take the guest stack from TEB.CurrentStackPointer. While the guest runs, that field holds the host
-	// stack, so it has to be set to the faulting guest esp before the filter is called.
-	teb->CurrentStackPointer = (void *)(uintptr_t)(uint32_t)uc->uc_mcontext.gregs[REG_RSP];
+	if (teb->Tib.Self != toGuestPtr(teb) || !teb->HostFsBase) {
+		return NULL;
+	}
+	// While guest code runs, TEB.CurrentStackPointer holds the host stack. The guest stack is set for the handlers
+	// and restored on resume.
+	state->hostSp = teb->CurrentStackPointer;
+	teb->CurrentStackPointer = (void *)(uintptr_t)(uint32_t)uc->uc_mcontext.gregs[GREG_ESP];
 	syscall(SYS_arch_prctl, ARCH_SET_FS, (unsigned long)(uintptr_t)teb->HostFsBase);
+	return teb;
 }
 #endif
 
@@ -207,13 +307,6 @@ __attribute__((no_stack_protector)) static long rawSyscall1(long nr, long a1) {
 	                 : "memory");
 	return ret;
 }
-
-// The guest-running state that a fault dispatch has to put back before a handler can resume the guest.
-typedef struct {
-	void *guestSp;
-	uint16_t hostFs;
-	uint16_t hostGs;
-} GuestFaultState;
 
 // A 32-bit guest runs with the TEB in fs and gs = 0. The thunks swap fs and gs with TEB.CurrentFsSelector and
 // TEB.CurrentGsSelector on every transition, so those fields hold the host selectors while guest code runs.
@@ -239,7 +332,7 @@ __attribute__((no_stack_protector)) static TEB *restoreHostSegmentsForGuestFault
 	}
 	uint16_t hostFs = teb->CurrentFsSelector;
 	uint16_t hostGs = teb->CurrentGsSelector;
-	state->guestSp = teb->CurrentStackPointer;
+	state->hostSp = teb->CurrentStackPointer;
 	state->hostFs = hostFs;
 	state->hostGs = hostGs;
 	teb->CurrentStackPointer = (void *)(uintptr_t)(uint32_t)uc->uc_mcontext.gregs[REG_ESP];
@@ -249,42 +342,99 @@ __attribute__((no_stack_protector)) static TEB *restoreHostSegmentsForGuestFault
 	return teb;
 }
 
+#endif
+
+#if defined(__linux__) && !defined(WIBO_GUEST64)
+#if defined(__linux__) && defined(__x86_64__)
+// Entered by sigreturn with the guest context in host registers: rax/rbx/rcx/rdx/rsi/rdi/rbp hold the guest's
+// general registers, r8 eip, r9 esp, r11 fs selector, r12 gs selector, and rflags the guest's EFLAGS. Nothing is read
+// from memory, so the context does not depend on a stack frame surviving sigreturn. A null selector is not loaded,
+// because that would clear the fs base that resumeGuestFault set. The far return switches to the 32-bit code segment
+// (0x23) and sets the guest's esp last.
+__asm__(".text\n"
+		".globl wiboResumeGuest32\n"
+		".type wiboResumeGuest32, @function\n"
+		"wiboResumeGuest32:\n"
+		".intel_syntax noprefix\n"
+		"\ttest r11w, r11w\n"
+		"\tjz 1f\n"
+		"\tmov fs, r11w\n"
+		"1:\n"
+		"\ttest r12w, r12w\n"
+		"\tjz 2f\n"
+		"\tmov gs, r12w\n"
+		"2:\n"
+		"\tmov rsp, r9\n"
+		"\tpush 0x23\n"
+		"\tpush r8\n"
+		"\tretfq\n"
+		".att_syntax prefix\n"
+		".size wiboResumeGuest32, .-wiboResumeGuest32\n"
+		".previous\n");
+extern char wiboResumeGuest32[];
+#endif
+
 // Resumes the guest at the context a handler left behind. Returns false if no handler continued execution. The TEB
 // is then left as the filter and report expect it: host segments, with the guest stack pointer for the filter.
-__attribute__((no_stack_protector)) static bool resumeGuestFault(TEB *teb, const GuestFaultState *state,
+__attribute__((no_stack_protector)) static bool resumeGuestFault(TEB *teb, GuestFaultState *state,
 																EXCEPTION_RECORD *record, void *uctx) {
 	ucontext_t *uc = uctx;
 	greg_t *g = uc->uc_mcontext.gregs;
 	CONTEXT ctx;
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-	ctx.Eip = (uint32_t)g[REG_EIP];
-	ctx.Esp = (uint32_t)g[REG_ESP];
-	ctx.Ebp = (uint32_t)g[REG_EBP];
-	ctx.Eax = (uint32_t)g[REG_EAX];
-	ctx.Ebx = (uint32_t)g[REG_EBX];
-	ctx.Ecx = (uint32_t)g[REG_ECX];
-	ctx.Edx = (uint32_t)g[REG_EDX];
-	ctx.Esi = (uint32_t)g[REG_ESI];
-	ctx.Edi = (uint32_t)g[REG_EDI];
+	ctx.Eip = (uint32_t)g[GREG_EIP];
+	ctx.Esp = (uint32_t)g[GREG_ESP];
+	ctx.Ebp = (uint32_t)g[GREG_EBP];
+	ctx.Eax = (uint32_t)g[GREG_EAX];
+	ctx.Ebx = (uint32_t)g[GREG_EBX];
+	ctx.Ecx = (uint32_t)g[GREG_ECX];
+	ctx.Edx = (uint32_t)g[GREG_EDX];
+	ctx.Esi = (uint32_t)g[GREG_ESI];
+	ctx.Edi = (uint32_t)g[GREG_EDI];
 	ctx.EFlags = (uint32_t)g[REG_EFL];
-	if (!guestDispatchRegistrations(teb, record, &ctx, (uintptr_t)ctx.Esp)) {
+	if (!dispatchGuestRegistrations(teb, record, &ctx, (uintptr_t)ctx.Esp)) {
 		return false;
 	}
-	// Guest-running state again. The sigreturn restores the guest fs and gs from the ucontext.
+	teb->CurrentStackPointer = state->hostSp;
+#if defined(__i386__)
+	// Guest-running state again. The sigreturn restores the guest's segments from the ucontext.
 	teb->CurrentFsSelector = state->hostFs;
 	teb->CurrentGsSelector = state->hostGs;
-	teb->CurrentStackPointer = state->guestSp;
-	g[REG_EIP] = ctx.Eip;
-	g[REG_ESP] = ctx.Esp;
-	g[REG_EBP] = ctx.Ebp;
-	g[REG_EAX] = ctx.Eax;
-	g[REG_EBX] = ctx.Ebx;
-	g[REG_ECX] = ctx.Ecx;
-	g[REG_EDX] = ctx.Edx;
-	g[REG_ESI] = ctx.Esi;
-	g[REG_EDI] = ctx.Edi;
+	g[GREG_EIP] = ctx.Eip;
+	g[GREG_ESP] = ctx.Esp;
+	g[GREG_EBP] = ctx.Ebp;
+	g[GREG_EAX] = ctx.Eax;
+	g[GREG_EBX] = ctx.Ebx;
+	g[GREG_ECX] = ctx.Ecx;
+	g[GREG_EDX] = ctx.Edx;
+	g[GREG_ESI] = ctx.Esi;
+	g[GREG_EDI] = ctx.Edi;
 	g[REG_EFL] = ctx.EFlags;
+#else
+	// The guest's selectors come from the TEB, since the signal frame does not reliably carry them. The fs base is
+	// set to the TEB here, because sigreturn keeps the base for a null selector and the stub never loads one.
+	uint16_t guestFs = teb->CurrentFsSelector;
+	uint16_t guestGs = teb->CurrentGsSelector;
+	syscall(SYS_arch_prctl, ARCH_SET_FS, (unsigned long)(uintptr_t)teb);
+	uint16_t hostCs;
+	__asm__("mov %%cs, %0" : "=r"(hostCs));
+	// Host code selector with null fs and gs, so the sigreturn keeps the fs base set above.
+	g[REG_CSGSFS] = (greg_t)(((uint64_t)g[REG_CSGSFS] & 0xffff000000000000ULL) | hostCs);
+	g[REG_RIP] = (greg_t)(uintptr_t)wiboResumeGuest32;
+	g[REG_EFL] = ctx.EFlags;
+	g[REG_RAX] = ctx.Eax;
+	g[REG_RBX] = ctx.Ebx;
+	g[REG_RCX] = ctx.Ecx;
+	g[REG_RDX] = ctx.Edx;
+	g[REG_RSI] = ctx.Esi;
+	g[REG_RDI] = ctx.Edi;
+	g[REG_RBP] = ctx.Ebp;
+	g[REG_R8] = ctx.Eip;
+	g[REG_R9] = ctx.Esp;
+	g[REG_R11] = guestFs;
+	g[REG_R12] = guestGs;
+#endif
 	return true;
 }
 #endif
@@ -475,9 +625,13 @@ static bool dispatchHostFault(void *uctx, EXCEPTION_RECORD *record) {
 // SA_NODEFER is not set, so a fault while this handler runs is fatal (the kernel resets to SIG_DFL).
 // Returning from this function resumes the guest when a handler continued execution.
 __attribute__((no_stack_protector)) static void reportHostFault(int sig, siginfo_t *info, void *uctx) {
-#if defined(__linux__) && defined(__i386__)
+#if defined(__linux__) && !defined(WIBO_GUEST64)
 	GuestFaultState state = {0};
+#if defined(__i386__)
 	TEB *guestTeb = restoreHostSegmentsForGuestFault(uctx, &state);
+#else
+	TEB *guestTeb = restoreHostFsForGuestFault(uctx, &state);
+#endif
 #endif
 	uintptr_t ip = 0;
 	uintptr_t err = 0;
@@ -486,9 +640,9 @@ __attribute__((no_stack_protector)) static void reportHostFault(int sig, siginfo
 	EXCEPTION_RECORD record;
 	memset(&record, 0, sizeof(record));
 	record.ExceptionAddress = toGuestPtr((void *)ip);
-	if (sig == SIGSEGV || sig == SIGBUS) {
-		record.ExceptionCode = STATUS_ACCESS_VIOLATION;
-		record.NumberParameters = 2;
+		if (sig == SIGSEGV || sig == SIGBUS) {
+			record.ExceptionCode = STATUS_ACCESS_VIOLATION;
+			record.NumberParameters = 2;
 		// The x86 page-fault error code has bit 1 set for writes.
 		record.ExceptionInformation[0] = (err & 2) ? 1 : 0;
 		record.ExceptionInformation[1] = (ULONG_PTR)info->si_addr;
@@ -501,10 +655,7 @@ __attribute__((no_stack_protector)) static void reportHostFault(int sig, siginfo
 	} else {
 		record.ExceptionCode = STATUS_FLOAT_DIVIDE_BY_ZERO;
 	}
-#if defined(__linux__) && defined(__x86_64__)
-	restoreHostFsForGuestFault(uctx);
-#endif
-#if defined(__linux__) && defined(__i386__)
+#if defined(__linux__) && !defined(WIBO_GUEST64)
 	if (guestTeb && resumeGuestFault(guestTeb, &state, &record, uctx)) {
 		return;
 	}
@@ -557,12 +708,11 @@ void WINAPI RaiseException(DWORD dwExceptionCode, DWORD dwExceptionFlags, DWORD 
 		record.NumberParameters = count;
 		memcpy(record.ExceptionInformation, lpArguments, count * sizeof(ULONG_PTR));
 	}
-#if defined(__i386__)
+#if !defined(WIBO_GUEST64)
 	if (resumeRaisedException(&record)) {
 		return;
 	}
-#endif
-#if defined(WIBO_GUEST64)
+#else
 	if (resumeRaisedException64(&record)) {
 		return;
 	}
