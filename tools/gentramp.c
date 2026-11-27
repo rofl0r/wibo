@@ -1410,6 +1410,12 @@ static void emitThunk32(Buf *o, const Sig *f, int h2g) {
     }
     bline(o, "\tmov dword ptr [ecx+TEB_SP], esp");
     bline(o, "\tmov esp, ebp");
+    if (!h2g) {
+        /* Link record { prev, H } at the top of the host frame, so a landing can find and pop it. */
+        bline(o, "\tpush ebp");
+        bline(o, "\tpush dword ptr [ecx+TEB_GUEST_FRAME]");
+        bline(o, "\tmov dword ptr [ecx+TEB_GUEST_FRAME], esp");
+    }
 
     if (tgt.stackSize > 0)
         bline(o, "\tsub esp, %ld", tgt.stackSize);
@@ -1494,6 +1500,10 @@ static void emitThunk32(Buf *o, const Sig *f, int h2g) {
     if (saveEax)
         bline(o, "\tpop eax");
 
+    if (!h2g) {
+        bline(o, "\tlea esp, [ebp-8]");
+        bline(o, "\tpop dword ptr [ecx+TEB_GUEST_FRAME]");
+    }
     bline(o, "\tmov esp, ebp");
     bline(o, "\tmov ebp, dword ptr [ecx+TEB_SP]");
     bline(o, "\tmov dword ptr [ecx+TEB_SP], esp");
@@ -1637,6 +1647,10 @@ static void emitThunk64(Buf *o, const Sig *f, int h2g) {
     bline(o, "\tmov rbp, qword ptr [rbx+TEB_SP]");
     bline(o, "\tmov qword ptr [rbx+TEB_SP], rsp");
     bline(o, "\tmov rsp, rbp");
+    /* Link record { prev, H } at the top of the host frame, so a landing can find and pop it. */
+    bline(o, "\tpush rbp");
+    bline(o, "\tpush qword ptr [rbx+TEB_GUEST_FRAME]");
+    bline(o, "\tmov qword ptr [rbx+TEB_GUEST_FRAME], rsp");
     if (tgt.stackSize > 0)
         bline(o, "\tsub rsp, %ld", tgt.stackSize);
     if (align > 0)
@@ -1693,6 +1707,8 @@ static void emitThunk64(Buf *o, const Sig *f, int h2g) {
     bline(o, "\tpop rax");
     if (typeSize(f->ret) > 4)
         bline(o, "\tmov rdx, rax\n\tshr rdx, 32");
+    bline(o, "\tlea rsp, [rbp-16]");
+    bline(o, "\tpop qword ptr [rbx+TEB_GUEST_FRAME]");
     bline(o, "\tmov rsp, qword ptr [rbx+TEB_SP]");
     bline(o, "\tmov qword ptr [rbx+TEB_SP], rbp");
     bline(o, "\tLJMP32 rbx");

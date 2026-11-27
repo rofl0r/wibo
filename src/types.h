@@ -547,10 +547,9 @@ typedef struct _TEB {
 #endif
 	// Stack pointer of the innermost host-to-guest activation; SEH dispatch never resumes above it.
 	void *GuestBoundary;
-#ifdef __x86_64__
-	// Innermost Win64 thunk call record (see emitThunkWin64). Read by SEH dispatch to find guest frames.
+	// Innermost guest-to-host call record (emitThunkWin64 on Win64, the g2h thunks on 32-bit). Read by SEH dispatch
+	// and unwinding to find the guest frames of the innermost call.
 	void *GuestCallFrame;
-#endif
 } TEB;
 typedef GUEST_PTR PTEB;
 

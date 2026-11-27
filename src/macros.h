@@ -8,6 +8,7 @@
 
 #define TEB_SP 0xf9c // CurrentStackPointer
 #define TEB_BOUNDARY 0xfa0 // GuestBoundary
+#define TEB_GUEST_FRAME 0xfa4 // GuestCallFrame
 
 #endif // __i386__
 
