@@ -2,7 +2,7 @@
 
 #include "types.h"
 
-using PIO_APC_ROUTINE = PVOID;
+typedef PVOID PIO_APC_ROUTINE;
 
 typedef struct _IO_STATUS_BLOCK {
 	union {
@@ -12,35 +12,31 @@ typedef struct _IO_STATUS_BLOCK {
 	ULONG_PTR Information;
 } IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
 
-enum PROCESSINFOCLASS {
+typedef enum {
 	ProcessBasicInformation = 0,
 	ProcessWow64Information = 26,
 	ProcessImageFileName = 27,
-};
+} PROCESSINFOCLASS;
 
-struct RTL_OSVERSIONINFOW {
+typedef struct _RTL_OSVERSIONINFOW {
 	ULONG dwOSVersionInfoSize;
 	ULONG dwMajorVersion;
 	ULONG dwMinorVersion;
 	ULONG dwBuildNumber;
 	ULONG dwPlatformId;
 	WCHAR szCSDVersion[128];
-};
+} RTL_OSVERSIONINFOW, *PRTL_OSVERSIONINFOW;
 
-using PRTL_OSVERSIONINFOW = RTL_OSVERSIONINFOW *;
-
-namespace ntdll {
-
-PVOID CDECL memset(PVOID dest, int ch, SIZE_T count);
+PVOID CDECL ntdll_memset(PVOID dest, int ch, SIZE_T count);
 NTSTATUS WINAPI NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
 						   PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
 						   PULONG Key);
 NTSTATUS WINAPI NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
 							PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
 							PULONG Key);
-NTSTATUS WINAPI NtAllocateVirtualMemory(HANDLE ProcessHandle, guest_ptr<> *BaseAddress, ULONG_PTR ZeroBits,
+NTSTATUS WINAPI NtAllocateVirtualMemory(HANDLE ProcessHandle, GUEST_PTR *BaseAddress, ULONG_PTR ZeroBits,
 										PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
-NTSTATUS WINAPI NtProtectVirtualMemory(HANDLE ProcessHandle, guest_ptr<> *BaseAddress, PSIZE_T NumberOfBytesToProtect,
+NTSTATUS WINAPI NtProtectVirtualMemory(HANDLE ProcessHandle, GUEST_PTR *BaseAddress, PSIZE_T NumberOfBytesToProtect,
 									   ULONG NewAccessProtection, PULONG OldAccessProtection);
 NTSTATUS WINAPI NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
 									   ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
@@ -51,9 +47,14 @@ VOID WINAPI RtlSetBits(PRTL_BITMAP BitMapHeader, ULONG StartingIndex, ULONG Numb
 BOOLEAN WINAPI RtlAreBitsSet(PRTL_BITMAP BitMapHeader, ULONG StartingIndex, ULONG Length);
 BOOLEAN WINAPI RtlAreBitsClear(PRTL_BITMAP BitMapHeader, ULONG StartingIndex, ULONG Length);
 NTSTATUS WINAPI RtlGetVersion(PRTL_OSVERSIONINFOW lpVersionInformation);
+GUEST_PTR WINAPI RtlLookupFunctionEntry(ULONGLONG ControlPc, GUEST_PTR ImageBase, GUEST_PTR HistoryTable);
+GUEST_PTR WINAPI RtlVirtualUnwind(DWORD HandlerType, ULONGLONG ImageBase, ULONGLONG ControlPc, GUEST_PTR FunctionEntry,
+								  GUEST_PTR ContextRecord, GUEST_PTR HandlerData, GUEST_PTR EstablisherFrame,
+								  GUEST_PTR ContextPointers);
+// Implemented in kernel32 (dll/kernel32/winnt.c); the ntdll export forwards to that host function.
+void WINAPI RtlUnwindEx(GUEST_PTR TargetFrame, GUEST_PTR TargetIp, GUEST_PTR ExceptionRecord, GUEST_PTR ReturnValue,
+						GUEST_PTR ContextRecord, GUEST_PTR HistoryTable);
 NTSTATUS WINAPI NtQueryInformationProcess(HANDLE ProcessHandle, PROCESSINFOCLASS ProcessInformationClass,
 										  PVOID ProcessInformation, ULONG ProcessInformationLength,
 										  PULONG ReturnLength);
 NTSTATUS WINAPI LdrAddRefDll(ULONG Flags, HMODULE Module);
-
-} // namespace ntdll

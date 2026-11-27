@@ -19,7 +19,7 @@ ASM_GLOBAL(initFpState, @function)
 	ret
 ASM_END(initFpState)
 
-#if defined(__x86_64__) && defined(__linux__)
+#if defined(__x86_64__) && defined(__linux__) && !defined(WIBO_GUEST64)
 
 # void installSelectors(TEB *teb)
 # Installs ds/es selectors in 32-bit mode
@@ -96,14 +96,21 @@ ASM_GLOBAL(STUB_THUNK_SYMBOL, @function)
 #define STUB_THUNK_SYMBOL _Z9stubThunkILj\()\number\()EEvv
 ASM_GLOBAL(STUB_THUNK_SYMBOL, @function)
 #endif
+	#ifdef WIBO_GUEST64
+	mov ecx, \number
+	jmp SYMBOL_NAME(thunk_entry_stubBase)
+	#else
 	pop eax
 	push \number
 	push eax
 	jmp SYMBOL_NAME(thunk_entry_stubBase)
+	#endif
 ASM_END(STUB_THUNK_SYMBOL)
 .endm
 
+#ifndef WIBO_GUEST64
 .code32
+#endif
 stubThunkX 0
 stubThunkX 1
 stubThunkX 2

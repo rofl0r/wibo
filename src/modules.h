@@ -1,152 +1,167 @@
 #pragma once
 
 #include "common.h"
+#include "cutil.h"
 #include "entry.h"
+#include "resources.h"
 #include "tls.h"
 #include "types.h"
 
-#include <optional>
-#include <span>
-#include <unordered_map>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <sys/types.h>
 
-namespace wibo {
+typedef void *(*ResolveByName)(const char *);
+typedef void *(*ResolveByOrdinal)(uint16_t);
 
-using ResolveByName = void *(*)(const char *);
-using ResolveByOrdinal = void *(*)(uint16_t);
-
-struct ResourceIdentifier;
-struct ResourceLocation;
-
-struct ModuleStub {
+// Zero-initialize, then set the fields a built-in module provides.
+typedef struct {
 	const char **names;
-	ResolveByName byName = nullptr;
-	ResolveByOrdinal byOrdinal = nullptr;
-	std::span<const uint8_t> dllData{};
+	ResolveByName byName;
+	ResolveByOrdinal byOrdinal;
+	const uint8_t *dllData;
+	size_t dllDataSize;
+} ModuleStub;
+
+typedef struct Executable Executable;
+
+typedef struct Executable_SectionInfo {
+	uintptr_t base;
+	size_t size;
+	DWORD protect;
+	DWORD characteristics;
+} Executable_SectionInfo;
+
+typedef VEC(Executable_SectionInfo) SectionInfoVec;
+
+struct Executable {
+	void *imageBase;
+	size_t imageSize;
+	void *entryPoint;
+	void *rsrcBase;
+	uint32_t rsrcSize;
+	uintptr_t preferredImageBase;
+	intptr_t relocationDelta;
+	bool is64Bit;
+	uint32_t exportDirectoryRVA;
+	uint32_t exportDirectorySize;
+	uint32_t relocationDirectoryRVA;
+	uint32_t relocationDirectorySize;
+	uint32_t importDirectoryRVA;
+	uint32_t importDirectorySize;
+	uint32_t delayImportDirectoryRVA;
+	uint32_t delayImportDirectorySize;
+	uint32_t tlsDirectoryRVA;
+	uint32_t tlsDirectorySize;
+	uint32_t exceptionDirectoryRVA;
+	uint32_t exceptionDirectorySize;
+	// Registered .pdata copy (PE32+ only); owned by the module registry in unwind.c.
+	struct WiboFunctionTable *functionTable;
+	bool execMapped;
+	bool importsResolved;
+	bool importsResolving;
+	bool sectionsProtected;
+	bool isDll;
+	SectionInfoVec sections;
 };
 
-class Executable {
-  public:
-	struct SectionInfo {
-		uintptr_t base = 0;
-		size_t size = 0;
-		DWORD protect = PAGE_NOACCESS;
-		DWORD characteristics = 0;
-	};
+// Returns a zeroed executable with sections initialized; release with Executable_free.
+Executable *Executable_new(void);
+void Executable_free(Executable *self);
+bool Executable_loadPEFile(Executable *self, FILE *file, bool exec);
+bool Executable_loadPEImage(Executable *self, const uint8_t *image, size_t imageSize, bool exec);
+bool Executable_resolveImports(Executable *self);
+// language is NULL to match any language.
+bool Executable_findResource(const Executable *self, const ResourceIdentifier *type, const ResourceIdentifier *name,
+							 const uint16_t *language, ResourceLocation *out);
 
-	Executable() = default;
-	~Executable();
+static inline void *Executable_fromRVA(const Executable *self, uint32_t rva) {
+	return (uint8_t *)self->imageBase + rva;
+}
 
-	bool loadPE(FILE *file, bool exec);
-	bool loadPE(std::span<const uint8_t> image, bool exec);
-	bool resolveImports();
-	bool findResource(const ResourceIdentifier &type, const ResourceIdentifier &name, std::optional<uint16_t> language,
-					  ResourceLocation &out) const;
+typedef VEC(PIMAGE_TLS_CALLBACK) TlsCallbackVec;
 
-	template <typename T> T *fromRVA(uint32_t rva) const { return (T *)(rva + (uint8_t *)imageBase); }
+typedef struct {
+	bool hasTls;
+	DWORD index;
+	DWORD loaderIndex;
+	DWORD *indexLocation;
+	uint8_t *templateData;
+	size_t templateSize;
+	size_t zeroFillSize;
+	uint32_t characteristics;
+	size_t allocationSize;
+	TlsCallbackVec callbacks;
+	// Keyed by the raw bytes of a TEB *; values hold a GUEST_PTR cast to void *.
+	hashmap *threadAllocations;
+} ModuleTlsInfo;
 
-	void *imageBase = nullptr;
-	size_t imageSize = 0;
-	void *entryPoint = nullptr;
-	void *rsrcBase = nullptr;
-	uint32_t rsrcSize = 0;
-	uintptr_t preferredImageBase = 0;
-	intptr_t relocationDelta = 0;
-	uint32_t exportDirectoryRVA = 0;
-	uint32_t exportDirectorySize = 0;
-	uint32_t relocationDirectoryRVA = 0;
-	uint32_t relocationDirectorySize = 0;
-	uint32_t importDirectoryRVA = 0;
-	uint32_t importDirectorySize = 0;
-	uint32_t delayImportDirectoryRVA = 0;
-	uint32_t delayImportDirectorySize = 0;
-	uint32_t tlsDirectoryRVA = 0;
-	uint32_t tlsDirectorySize = 0;
-	bool execMapped = false;
-	bool importsResolved = false;
-	bool importsResolving = false;
-	bool sectionsProtected = false;
-	bool isDll = false;
-	std::vector<SectionInfo> sections;
-};
-
-struct ModuleTlsInfo {
-	bool hasTls = false;
-	DWORD index = tls::kInvalidTlsIndex;
-	DWORD loaderIndex = tls::kInvalidTlsIndex;
-	DWORD *indexLocation = nullptr;
-	uint8_t *templateData = nullptr;
-	size_t templateSize = 0;
-	size_t zeroFillSize = 0;
-	uint32_t characteristics = 0;
-	size_t allocationSize = 0;
-	std::vector<PIMAGE_TLS_CALLBACK> callbacks;
-	std::unordered_map<TEB *, GUEST_PTR> threadAllocations;
-};
-
-struct ModuleInfo {
+typedef struct {
 	// Windows-style handle to the module. For the main module, this is the image base.
 	// For other modules, this is a pointer to the ModuleInfo structure.
 	HMODULE handle;
-	// Original name used to load the module
-	std::string originalName;
-	// Normalized module name
-	std::string normalizedName;
-	// Full path to the loaded module
-	std::filesystem::path resolvedPath;
-	// Pointer to the built-in module, nullptr if loaded from file
-	const wibo::ModuleStub *moduleStub = nullptr;
-	// Loaded PE executable
-	std::unique_ptr<wibo::Executable> executable;
+	// Original name used to load the module (owned).
+	char *originalName;
+	// Normalized module name (owned).
+	char *normalizedName;
+	// Full path to the loaded module (owned).
+	char *resolvedPath;
+	// Pointer to the built-in module, NULL if loaded from file
+	const ModuleStub *moduleStub;
+	// Loaded PE executable (owned), NULL for built-in modules
+	Executable *executable;
 	// Reference count, or UINT_MAX for built-in modules
-	unsigned int refCount = 0;
-	bool processAttachCalled = false;
-	bool processAttachSucceeded = false;
-	bool threadNotificationsEnabled = true;
-	uint32_t exportOrdinalBase = 0;
-	std::vector<void *> exportsByOrdinal;
-	std::unordered_map<std::string, uint16_t> exportNameToOrdinal;
-	bool exportsInitialized = false;
+	unsigned int refCount;
+	bool processAttachCalled;
+	bool processAttachSucceeded;
+	bool threadNotificationsEnabled;
+	uint32_t exportOrdinalBase;
+	PtrVec exportsByOrdinal;
+	// Keyed by export name bytes (strlen); values hold a uint16_t cast to void *.
+	hashmap *exportNameToOrdinal;
+	bool exportsInitialized;
 	ModuleTlsInfo tlsInfo;
-};
-extern ModuleInfo *mainModule;
+} ModuleInfo;
 
-using ModulePtr = std::shared_ptr<wibo::ModuleInfo>;
+extern ModuleInfo *wibo_mainModule;
 
-void initializeModuleRegistry();
-void shutdownModuleRegistry();
-ModuleInfo *moduleInfoFromHandle(HMODULE module);
-void setDllDirectoryOverride(const std::filesystem::path &path);
-void clearDllDirectoryOverride();
-std::optional<std::filesystem::path> dllDirectoryOverride();
-ModuleInfo *findLoadedModule(const char *name);
-void notifyDllThreadAttach();
-void notifyDllThreadDetach();
-BOOL disableThreadNotifications(ModuleInfo *info);
-std::unordered_map<std::string, ModulePtr> allLoadedModules();
-bool initializeModuleTls(ModuleInfo &module);
-void releaseModuleTls(ModuleInfo &module);
+void wibo_initializeModuleRegistry(void);
+void wibo_shutdownModuleRegistry(void);
+ModuleInfo *wibo_moduleInfoFromHandle(HMODULE module);
+// The path is copied.
+void wibo_setDllDirectoryOverride(const char *path);
+void wibo_clearDllDirectoryOverride(void);
+// Returns a malloc'd path, or NULL if no override is set.
+char *wibo_dllDirectoryOverride(void);
+ModuleInfo *wibo_findLoadedModule(const char *name);
+void wibo_notifyDllThreadAttach(void);
+void wibo_notifyDllThreadDetach(void);
+BOOL wibo_disableThreadNotifications(ModuleInfo *info);
+// Returns a malloc'd name-to-ModuleInfo* snapshot; the modules are not retained, so free only the map.
+hashmap *wibo_allLoadedModules(void);
+bool wibo_initializeModuleTls(ModuleInfo *module);
+void wibo_releaseModuleTls(ModuleInfo *module);
 
-ModuleInfo *loadModule(const char *name);
-void freeModule(ModuleInfo *info);
-void *findExportByName(ModuleInfo *info, const char *funcName);
-void *findExportByOrdinal(ModuleInfo *info, uint16_t ordinal);
-void *resolveFuncByName(ModuleInfo *info, const char *funcName);
-void *resolveFuncByOrdinal(ModuleInfo *info, uint16_t ordinal);
-void *resolveMissingImportByName(const char *dllName, const char *funcName);
-void *resolveMissingImportByOrdinal(const char *dllName, uint16_t ordinal);
+ModuleInfo *wibo_loadModule(const char *name);
+void wibo_freeModule(ModuleInfo *info);
+void *wibo_findExportByName(ModuleInfo *info, const char *funcName);
+void *wibo_findExportByOrdinal(ModuleInfo *info, uint16_t ordinal);
+void *wibo_resolveFuncByName(ModuleInfo *info, const char *funcName);
+void *wibo_resolveFuncByOrdinal(ModuleInfo *info, uint16_t ordinal);
+void *wibo_resolveMissingImportByName(const char *dllName, const char *funcName);
+void *wibo_resolveMissingImportByOrdinal(const char *dllName, uint16_t ordinal);
 
-ModuleInfo *registerProcessModule(std::unique_ptr<Executable> executable, std::filesystem::path resolvedPath,
-								  std::string originalName);
-Executable *executableFromModule(HMODULE module);
-ModuleInfo *moduleInfoFromAddress(void *addr);
+// Takes ownership of executable; resolvedPath and originalName are copied.
+ModuleInfo *wibo_registerProcessModule(Executable *executable, const char *resolvedPath, const char *originalName);
+Executable *wibo_executableFromModule(HMODULE module);
+ModuleInfo *wibo_moduleInfoFromAddress(void *addr);
 
-/**
- * HMODULE will be `nullptr` or `mainModule->imageBase` if it's the main module,
- * otherwise it will be a pointer to a `wibo::ModuleInfo`.
- */
-inline bool isMainModule(HMODULE hModule) {
-	return hModule == NO_HANDLE || (mainModule && mainModule->executable &&
-									reinterpret_cast<void *>(hModule) == mainModule->executable->imageBase);
+// HMODULE will be 0 or `wibo_mainModule->executable->imageBase` if it's the main module,
+// otherwise it will be a pointer to a `ModuleInfo`.
+static inline bool wibo_isMainModule(HMODULE hModule) {
+	return hModule == NO_HANDLE ||
+		   (wibo_mainModule && wibo_mainModule->executable &&
+			(void *)(uintptr_t)hModule == wibo_mainModule->executable->imageBase);
 }
-
-} // namespace wibo

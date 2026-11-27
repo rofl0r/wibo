@@ -3,15 +3,25 @@
 #include <stdlib.h>
 #include <windows.h>
 
+#if defined(__x86_64__)
+static void *current_teb(void) {
+	void *teb = NULL;
+	__asm__ __volatile__("movq %%gs:0x30, %0" : "=r"(teb));
+	return teb;
+}
+#define TLS_SLOTS_OFFSET 0x1480
+#else
 static void *current_teb(void) {
 	void *teb = NULL;
 	__asm__ __volatile__("movl %%fs:0x18, %0" : "=r"(teb));
 	return teb;
 }
+#define TLS_SLOTS_OFFSET 0xE10
+#endif
 
 static void **tls_slots(void) {
 	uint8_t *teb = (uint8_t *)current_teb();
-	return (void **)(teb + 0xE10);
+	return (void **)(teb + TLS_SLOTS_OFFSET);
 }
 
 typedef struct {

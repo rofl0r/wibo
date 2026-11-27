@@ -1,4 +1,6 @@
 wibo
+wibo32
+wibo64
 build/
 *.o
 
@@ -6,17 +8,6 @@ build/
 
 # CLion
 .idea/
-cmake-build-*/
 
 # clangd
 .cache/
-
-# Python
-__pycache__/
-.venv/
-env/
-venv/
-*.pyc
-*.pyo
-*.pyd
-.ruff_cache/

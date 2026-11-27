@@ -2,28 +2,26 @@
 
 #include "types.h"
 
-using RPC_STATUS = ULONG;
-using RPC_WSTR = LPWSTR;
-using RPC_BINDING_HANDLE = PVOID;
-using RPC_AUTH_IDENTITY_HANDLE = PVOID;
-using PMIDL_STUB_DESC = PVOID;
-using PFORMAT_STRING = PUCHAR;
-using PRPC_MESSAGE = PVOID;
+typedef ULONG RPC_STATUS;
+typedef LPWSTR RPC_WSTR;
+typedef PVOID RPC_BINDING_HANDLE;
+typedef PVOID RPC_AUTH_IDENTITY_HANDLE;
+typedef PVOID PMIDL_STUB_DESC;
+typedef PUCHAR PFORMAT_STRING;
+typedef PVOID PRPC_MESSAGE;
 
-struct RPC_SECURITY_QOS {
+typedef struct RPC_SECURITY_QOS {
 	ULONG Version;
 	ULONG Capabilities;
 	ULONG IdentityTracking;
 	ULONG ImpersonationType;
 	GUEST_PTR AdditionalSecurityInfo;
-};
+} RPC_SECURITY_QOS;
 
-union CLIENT_CALL_RETURN {
+typedef union CLIENT_CALL_RETURN {
 	GUEST_PTR Pointer;
 	LONG_PTR Simple;
-};
-
-namespace rpcrt4 {
+} CLIENT_CALL_RETURN;
 
 RPC_STATUS WINAPI RpcStringBindingComposeW(RPC_WSTR objUuid, RPC_WSTR protSeq, RPC_WSTR networkAddr, RPC_WSTR endpoint,
 										   RPC_WSTR options, GUEST_PTR *stringBinding);
@@ -37,5 +35,3 @@ RPC_STATUS WINAPI RpcStringFreeW(GUEST_PTR *string);
 CLIENT_CALL_RETURN CDECL_NO_CONV NdrClientCall2(PMIDL_STUB_DESC stubDescriptor, PFORMAT_STRING format, ...);
 #endif
 VOID WINAPI NdrServerCall2(PRPC_MESSAGE message);
-
-} // namespace rpcrt4

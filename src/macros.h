@@ -7,6 +7,8 @@
 #ifdef __i386__
 
 #define TEB_SP 0xf9c // CurrentStackPointer
+#define TEB_BOUNDARY 0xfa0 // GuestBoundary
+#define TEB_GUEST_FRAME 0xfa4 // GuestCallFrame
 
 #endif // __i386__
 
@@ -19,6 +21,12 @@
 #define TEB_GSBASE 0xfb0	   // HostGsBase
 #define TEB_HAS_FSGSBASE 0xfb8 // HasFsGsBase
 #define TEB_HOST_CS_SEL 0xfba  // HostCodeSelector
+#define TEB_BOUNDARY 0xfc0	   // GuestBoundary
+#ifdef WIBO_GUEST64
+#define TEB_GUEST_FRAME 0x17b0 // GuestCallFrame; the Win64 TEB layout moves the wibo fields
+#else
+#define TEB_GUEST_FRAME 0xfc8  // GuestCallFrame
+#endif
 
 #endif
 
@@ -39,6 +47,9 @@
 #define SYMBOL_NAME(name) GLUE(__USER_LABEL_PREFIX__, name)
 
 #ifndef __ASSEMBLER__
+#include <stddef.h>
+#include <stdint.h>
+
 #define STR_(S) #S
 #define STR(S) STR_(S)
 #define SYMBOL_NAME_STR_(name) STR(__USER_LABEL_PREFIX__) #name
@@ -49,27 +60,22 @@
 #else
 #define ASM_SIZE_TYPE "long"
 #endif
+// .pushsection/.popsection so that compiler output after the blob stays in .text.
 #if __ELF__
-#define ASM_RODATA_SECTION ".section .rodata"
+#define ASM_RODATA_SECTION ".pushsection .rodata"
 #else
-#define ASM_RODATA_SECTION ".section __TEXT, __const"
+#define ASM_RODATA_SECTION ".pushsection __TEXT, __const"
 #endif
 
-// clang-format off
 #define INCLUDE_BIN(symbol, file)                                 \
     asm(ASM_RODATA_SECTION "\n"                                   \
         ".globl " SYMBOL_NAME_STR(symbol) "\n"                    \
         SYMBOL_NAME_STR(symbol) ":\n"                             \
         ".incbin \"" file "\"\n"                                  \
         ".globl " SYMBOL_NAME_STR(GLUE(symbol, End)) "\n"         \
-        SYMBOL_NAME_STR(GLUE(symbol, End)) ":\n");                \
-    extern "C" {                                                  \
-        extern const uint8_t symbol[];                            \
-        extern const uint8_t GLUE(symbol, End)[];                 \
-    }
-// clang-format on
-#define INCLUDE_BIN_SIZE(symbol)                                                                                       \
-	static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(&GLUE(symbol, End)) -                                    \
-							 reinterpret_cast<std::uintptr_t>(&symbol))
-#define INCLUDE_BIN_SPAN(symbol) std::span<const std::uint8_t>(symbol, INCLUDE_BIN_SIZE(symbol))
+        SYMBOL_NAME_STR(GLUE(symbol, End)) ":\n"                  \
+        ".popsection\n");                                         \
+    extern const uint8_t symbol[];                                \
+    extern const uint8_t GLUE(symbol, End)[];
+#define INCLUDE_BIN_SIZE(symbol) ((size_t)((uintptr_t)&GLUE(symbol, End) - (uintptr_t)&symbol))
 #endif

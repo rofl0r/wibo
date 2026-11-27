@@ -6,14 +6,12 @@
 - Sample fixtures for exercising the loader live in `test/`.
 
 ## Build, Test, and Development Commands
-- `cmake --preset debug` configures a 32-bit toolchain; ensure multilib packages are present. (`--preset release` for optimized builds.)
-- `cmake --build --preset debug` compiles the program and tests.
-- `./build/debug/wibo /path/to/program.exe` runs a Windows binary. Use `-D` (or `WIBO_DEBUG=1`) for verbose logging. Use `-C` to set the working directory.
-- `ctest --preset debug` runs the self-checking WinAPI fixtures (requires `i686-w64-mingw32-gcc` and `i686-w64-mingw32-windres`).
-- `clang-format -i path/to/file.cpp` and `clang-tidy -p build/debug path/to/file.cpp` keep contributions aligned with the repo's tooling.
+- Plain `make` builds `./wibo32` (PE32 guests) and, when `CC` targets x86_64, also `./wibo64` (PE32+ guests). `make wibo64` on a non-x86_64 `CC` is an error. Object files go under `build/<variant>-<arch>/obj`. Use `DEBUG=1` for a debug build (`-O0 -g3`). The target architecture comes from `CC` (its predefined `__x86_64__`/`__i386__` macros), never from a separate variable. On x86_64 hosts `wibo32` is a 64-bit ELF that runs PE32 guests; `CC="gcc -m32"` (multilib) or a 32-bit cross compiler builds a native 32-bit ELF instead. No `-m32` is added implicitly. `gentramp` is built with `HOSTCC` (defaults to `CC`).
+- `./wibo32 /path/to/program.exe` runs a Windows binary. Use `-D` (or `WIBO_DEBUG=1`) for verbose logging. Use `-C` to set the working directory.
+- `make test` runs the self-checking WinAPI fixtures (requires `i686-w64-mingw32-gcc` and `i686-w64-mingw32-windres`). Use `make test TEST=wibo.<name>` to run one fixture.
 
 ## Coding Style & Naming Conventions
-- Formatting follows `.clang-format` (LLVM base, tabbed indentation width 4, 120 column limit).
+- Indent with tabs, as the existing files do. Keep lines under 120 columns.
 - Use PascalCase for Win32 entry points, camelCase for internal helpers, SCREAMING_SNAKE_CASE for Win32 constants, kCamelCase for internal constants, g_camelCase for globals, and mPascalCase for member variables.
 - Put static functions and variables in anonymous namespaces at the top of the file.
 - Prefer scoping types to the header or source file that uses them; avoid polluting `common.h` unless widely shared.
@@ -30,10 +28,10 @@
 ## Testing Guidelines
 - Fixture tests live in `test/` and are compiled automatically with `i686-w64-mingw32-gcc`.
 - Keep new repros small and self-contained (`test_<feature>.c`).
-- All fixtures must self-assert; use `test_assert.h` helpers so `ctest` fails on mismatched WinAPI behaviour.
-- Update `CMakeLists.txt` to add new fixture sources, then rebuild. (`cmake --build --preset debug`)
-- ALWAYS run tests against `wine` FIRST to establish expected behaviour. (`WINEDEBUG=-all wine build/debug/test/test_<feature>.exe`)
-- Run tests against wibo with `ctest --preset debug`. (Or `release` for optimized builds.)
+- All fixtures must self-assert; use `test_assert.h` helpers so `make test` fails on mismatched WinAPI behaviour.
+- Add new fixture names to `FIXTURE_NAMES` (or `FIXTURE_DLL_NAMES` for DLL fixtures) in the `Makefile`, then rebuild. (`make fixtures`)
+- ALWAYS run tests against `wine` FIRST to establish expected behaviour. (`WINEDEBUG=-all wine build/wibo32/test/test_<feature>.exe`)
+- Run tests against wibo with `make test` (or `make DEBUG=1 test`; plain `make test` covers every runtime built). Use `make test TEST=wibo.<name>` for a single fixture.
 
 ## Debugging Workflow
 - Reproduce crashes under `gdb` (or `lldb`) with `-q -batch` to capture backtraces, register state, and the faulting instruction without interactive prompts.
@@ -47,4 +45,3 @@
 - Build, then run the test(s) against `wine` to establish expected behaviour. (Important!)
 - Plan and implement the API.
 - Build, then run tests against `wibo` for validation.
-- Format with `clang-format` and lint with `clang-tidy`.

@@ -3,38 +3,39 @@
 #include "common.h"
 #include "kernel32/internal.h"
 
-#include <cstdio>
-#include <filesystem>
-#include <optional>
-#include <string>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <sys/types.h>
 
-using kernel32::FileObject;
+typedef struct {
+	size_t bytesTransferred;
+	int unixError;
+	bool reachedEnd;
+} IOResult;
 
-namespace files {
+void files_init(void);
+// Returns a malloc'd host path, or NULL on failure.
+char *files_pathFromWindows(const char *inStr);
+// Returns a malloc'd Windows path.
+char *files_pathToWindows(const char *path);
+// offset is NULL when the current file position should be used.
+IOResult files_read(FileObject *file, void *buffer, size_t bytesToRead, const off_t *offset, bool updateFilePointer);
+IOResult files_write(FileObject *file, const void *buffer, size_t bytesToWrite, const off_t *offset,
+					 bool updateFilePointer);
+HANDLE files_getStdHandle(DWORD nStdHandle);
+BOOL files_setStdHandle(DWORD nStdHandle, HANDLE hHandle);
+// Returns a malloc'd path, or NULL if no match exists.
+char *files_findCaseInsensitiveFile(const char *directory, const char *filename);
+// Returns a malloc'd path.
+char *files_canonicalPath(const char *path);
+// Returns malloc'd strings.
+char *files_hostPathListToWindows(const char *value);
+char *files_windowsPathListToHost(const char *value);
 
-struct IOResult {
-	size_t bytesTransferred = 0;
-	int unixError = 0;
-	bool reachedEnd = false;
-};
-
-void init();
-std::filesystem::path pathFromWindows(const char *inStr);
-std::string pathToWindows(const std::filesystem::path &path);
-IOResult read(FileObject *file, void *buffer, size_t bytesToRead, const std::optional<off_t> &offset,
-			  bool updateFilePointer);
-IOResult write(FileObject *file, const void *buffer, size_t bytesToWrite, const std::optional<off_t> &offset,
-			   bool updateFilePointer);
-HANDLE getStdHandle(DWORD nStdHandle);
-BOOL setStdHandle(DWORD nStdHandle, HANDLE hHandle);
-std::optional<std::filesystem::path> findCaseInsensitiveFile(const std::filesystem::path &directory,
-															 const std::string &filename);
-std::filesystem::path canonicalPath(const std::filesystem::path &path);
-std::string hostPathListToWindows(const std::string &value);
-std::string windowsPathListToHost(const std::string &value);
-
-} // namespace files
-
-inline bool endsWith(const std::string &str, const std::string &suffix) {
-	return str.size() >= suffix.size() && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+static inline bool endsWith(const char *str, const char *suffix) {
+	size_t len = strlen(str);
+	size_t suffixLen = strlen(suffix);
+	return len >= suffixLen && memcmp(str + len - suffixLen, suffix, suffixLen) == 0;
 }

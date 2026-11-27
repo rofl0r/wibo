@@ -2,19 +2,17 @@
 
 #include "types.h"
 
-constexpr DWORD HEAP_NO_SERIALIZE = 0x00000001;
-constexpr DWORD HEAP_GENERATE_EXCEPTIONS = 0x00000004;
-constexpr DWORD HEAP_ZERO_MEMORY = 0x00000008;
-constexpr DWORD HEAP_REALLOC_IN_PLACE_ONLY = 0x00000010;
-constexpr DWORD HEAP_CREATE_ENABLE_EXECUTE = 0x00040000;
+#define HEAP_NO_SERIALIZE 0x00000001
+#define HEAP_GENERATE_EXCEPTIONS 0x00000004
+#define HEAP_ZERO_MEMORY 0x00000008
+#define HEAP_REALLOC_IN_PLACE_ONLY 0x00000010
+#define HEAP_CREATE_ENABLE_EXECUTE 0x00040000
 
-enum HEAP_INFORMATION_CLASS {
+typedef enum HEAP_INFORMATION_CLASS {
 	HeapCompatibilityInformation = 0,
 	HeapEnableTerminationOnCorruption = 1,
 	HeapOptimizeResources = 3,
-};
-
-namespace kernel32 {
+} HEAP_INFORMATION_CLASS;
 
 HANDLE WINAPI HeapCreate(DWORD flOptions, SIZE_T dwInitialSize, SIZE_T dwMaximumSize);
 BOOL WINAPI HeapDestroy(HANDLE hHeap);
@@ -26,5 +24,3 @@ LPVOID WINAPI HeapReAlloc(HANDLE hHeap, DWORD dwFlags, LPVOID lpMem, SIZE_T dwBy
 SIZE_T WINAPI HeapSize(HANDLE hHeap, DWORD dwFlags, LPCVOID lpMem);
 BOOL WINAPI HeapFree(HANDLE hHeap, DWORD dwFlags, LPVOID lpMem);
 BOOL WINAPI HeapValidate(HANDLE hHeap, DWORD dwFlags, LPCVOID lpMem);
-
-} // namespace kernel32

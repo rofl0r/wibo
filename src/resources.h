@@ -1,47 +1,39 @@
 #pragma once
 
-#include <cstdint>
-#include <string>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
-namespace wibo {
+typedef struct Executable Executable;
 
-class Executable;
-
-struct ResourceIdentifier {
-	ResourceIdentifier() : isString(false), id(0) {}
-	static ResourceIdentifier fromID(uint32_t value) {
-		ResourceIdentifier ident;
-		ident.isString = false;
-		ident.id = value;
-		return ident;
-	}
-	static ResourceIdentifier fromString(std::u16string value) {
-		ResourceIdentifier ident;
-		ident.isString = true;
-		ident.name = std::move(value);
-		return ident;
-	}
+// The name buffer is owned by the identifier when isString is set; release it with ResourceIdentifier_free.
+typedef struct {
 	bool isString;
 	uint32_t id;
-	std::u16string name;
-};
+	uint16_t *name;
+	size_t nameLen;
+} ResourceIdentifier;
 
-struct ResourceLocation {
-	const void *dataEntry = nullptr;
-	const void *data = nullptr;
-	uint32_t size = 0;
-	uint16_t language = 0;
-};
+typedef struct {
+	const void *dataEntry;
+	const void *data;
+	uint32_t size;
+	uint16_t language;
+} ResourceLocation;
 
-struct ImageResourceDataEntry {
+typedef struct {
 	uint32_t offsetToData;
 	uint32_t size;
 	uint32_t codePage;
 	uint32_t reserved;
-};
+} ImageResourceDataEntry;
 
-bool resourceEntryBelongsToExecutable(const Executable &exe, const ImageResourceDataEntry *entry);
-ResourceIdentifier resourceIdentifierFromAnsi(const char *id);
-ResourceIdentifier resourceIdentifierFromWide(const uint16_t *id);
+ResourceIdentifier ResourceIdentifier_fromID(uint32_t value);
+// Takes ownership of name (malloc'd, len code units, not necessarily NUL-terminated).
+ResourceIdentifier ResourceIdentifier_fromString(uint16_t *name, size_t len);
+void ResourceIdentifier_free(ResourceIdentifier *ident);
 
-} // namespace wibo
+bool wibo_resourceEntryBelongsToExecutable(const Executable *exe, const ImageResourceDataEntry *entry);
+// Returned identifiers own their name buffer; release with ResourceIdentifier_free.
+ResourceIdentifier wibo_resourceIdentifierFromAnsi(const char *id);
+ResourceIdentifier wibo_resourceIdentifierFromWide(const uint16_t *id);

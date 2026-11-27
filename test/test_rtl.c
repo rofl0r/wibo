@@ -76,5 +76,8 @@ int main(void) {
     test_basic_version(rtl_get_version);
     test_extended_version(rtl_get_version);
     test_invalid_size(rtl_get_version);
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    TEST_CHECK(ntdll != NULL);
+    TEST_CHECK(GetProcAddress(ntdll, "RtlUnwindEx") != NULL);
     return 0;
 }

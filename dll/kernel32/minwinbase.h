@@ -2,24 +2,24 @@
 
 #include "types.h"
 
-struct SECURITY_ATTRIBUTES {
+typedef struct SECURITY_ATTRIBUTES {
 	DWORD nLength;
 	GUEST_PTR lpSecurityDescriptor;
 	BOOL bInheritHandle;
-};
+} SECURITY_ATTRIBUTES;
 
-using PSECURITY_ATTRIBUTES = SECURITY_ATTRIBUTES *;
-using LPSECURITY_ATTRIBUTES = SECURITY_ATTRIBUTES *;
+typedef SECURITY_ATTRIBUTES *PSECURITY_ATTRIBUTES;
+typedef SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES;
 
-struct FILETIME {
+typedef struct FILETIME {
 	DWORD dwLowDateTime;
 	DWORD dwHighDateTime;
-};
+} FILETIME;
 
-using PFILETIME = FILETIME *;
-using LPFILETIME = FILETIME *;
+typedef FILETIME *PFILETIME;
+typedef FILETIME *LPFILETIME;
 
-struct SYSTEMTIME {
+typedef struct SYSTEMTIME {
 	WORD wYear;
 	WORD wMonth;
 	WORD wDayOfWeek;
@@ -28,28 +28,28 @@ struct SYSTEMTIME {
 	WORD wMinute;
 	WORD wSecond;
 	WORD wMilliseconds;
-};
+} SYSTEMTIME;
 
-using PSYSTEMTIME = SYSTEMTIME *;
-using LPSYSTEMTIME = SYSTEMTIME *;
+typedef SYSTEMTIME *PSYSTEMTIME;
+typedef SYSTEMTIME *LPSYSTEMTIME;
 
-enum FINDEX_INFO_LEVELS { FindExInfoStandard, FindExInfoBasic, FindExInfoMaxInfoLevel };
+typedef enum FINDEX_INFO_LEVELS { FindExInfoStandard, FindExInfoBasic, FindExInfoMaxInfoLevel } FINDEX_INFO_LEVELS;
 
-enum FINDEX_SEARCH_OPS {
+typedef enum FINDEX_SEARCH_OPS {
 	FindExSearchNameMatch,
 	FindExSearchLimitToDirectories,
 	FindExSearchLimitToDevices,
 	FindExSearchMaxSearchOp
-};
+} FINDEX_SEARCH_OPS;
 
-enum GET_FILEEX_INFO_LEVELS { GetFileExInfoStandard, GetFileExMaxInfoLevel };
+typedef enum GET_FILEEX_INFO_LEVELS { GetFileExInfoStandard, GetFileExMaxInfoLevel } GET_FILEEX_INFO_LEVELS;
 
-constexpr DWORD FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
-constexpr DWORD FILE_ATTRIBUTE_NORMAL = 0x00000080;
+#define FILE_ATTRIBUTE_DIRECTORY ((DWORD)0x00000010)
+#define FILE_ATTRIBUTE_NORMAL ((DWORD)0x00000080)
 
-constexpr DWORD MAX_PATH = 260;
+#define MAX_PATH ((DWORD)260)
 
-struct WIN32_FIND_DATAA {
+typedef struct WIN32_FIND_DATAA {
 	DWORD dwFileAttributes;
 	FILETIME ftCreationTime;
 	FILETIME ftLastAccessTime;
@@ -60,9 +60,9 @@ struct WIN32_FIND_DATAA {
 	DWORD dwReserved1;
 	CHAR cFileName[MAX_PATH];
 	CHAR cAlternateFileName[14];
-};
+} WIN32_FIND_DATAA;
 
-struct WIN32_FIND_DATAW {
+typedef struct WIN32_FIND_DATAW {
 	DWORD dwFileAttributes;
 	FILETIME ftCreationTime;
 	FILETIME ftLastAccessTime;
@@ -73,23 +73,23 @@ struct WIN32_FIND_DATAW {
 	DWORD dwReserved1;
 	WCHAR cFileName[MAX_PATH];
 	WCHAR cAlternateFileName[14];
-};
+} WIN32_FIND_DATAW;
 
-struct WIN32_FILE_ATTRIBUTE_DATA {
+typedef struct WIN32_FILE_ATTRIBUTE_DATA {
 	DWORD dwFileAttributes;
 	FILETIME ftCreationTime;
 	FILETIME ftLastAccessTime;
 	FILETIME ftLastWriteTime;
 	DWORD nFileSizeHigh;
 	DWORD nFileSizeLow;
-};
+} WIN32_FILE_ATTRIBUTE_DATA;
 
-using PWIN32_FIND_DATAA = WIN32_FIND_DATAA *;
-using LPWIN32_FIND_DATAA = WIN32_FIND_DATAA *;
-using PWIN32_FIND_DATAW = WIN32_FIND_DATAW *;
-using LPWIN32_FIND_DATAW = WIN32_FIND_DATAW *;
-using PWIN32_FILE_ATTRIBUTE_DATA = WIN32_FILE_ATTRIBUTE_DATA *;
-using LPWIN32_FILE_ATTRIBUTE_DATA = WIN32_FILE_ATTRIBUTE_DATA *;
+typedef WIN32_FIND_DATAA *PWIN32_FIND_DATAA;
+typedef WIN32_FIND_DATAA *LPWIN32_FIND_DATAA;
+typedef WIN32_FIND_DATAW *PWIN32_FIND_DATAW;
+typedef WIN32_FIND_DATAW *LPWIN32_FIND_DATAW;
+typedef WIN32_FILE_ATTRIBUTE_DATA *PWIN32_FILE_ATTRIBUTE_DATA;
+typedef WIN32_FILE_ATTRIBUTE_DATA *LPWIN32_FILE_ATTRIBUTE_DATA;
 
 typedef struct _OVERLAPPED {
 	ULONG_PTR Internal;

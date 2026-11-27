@@ -2,39 +2,38 @@
 
 #include "common.h"
 
-#include <cstdint>
-
-namespace wibo::access {
+#include <stdbool.h>
+#include <stdint.h>
 
 // Maps the Win32 generic access bits (GENERIC_* constants) to the
 // object-specific rights supplied in the mapping table.
-struct GenericMapping {
+typedef struct {
 	uint32_t genericRead;
 	uint32_t genericWrite;
 	uint32_t genericExecute;
 	uint32_t genericAll;
-};
+} GenericMapping;
 
-struct NormalizedAccess {
+typedef struct {
 	uint32_t requestedMask; // mask after generic expansion + implicit bits
 	uint32_t grantedMask;	// requested & supported
 	uint32_t deniedMask;	// requested & ~supported
-};
+} NormalizedAccess;
 
-uint32_t mapGenericMask(uint32_t desiredMask, const GenericMapping &mapping);
-NormalizedAccess normalizeDesiredAccess(uint32_t desiredMask, const GenericMapping &mapping, uint32_t supportedMask,
-										uint32_t alwaysGrantMask = 0, uint32_t defaultMask = 0);
+uint32_t wibo_access_mapGenericMask(uint32_t desiredMask, const GenericMapping *mapping);
+NormalizedAccess wibo_access_normalizeDesiredAccess(uint32_t desiredMask, const GenericMapping *mapping,
+													uint32_t supportedMask, uint32_t alwaysGrantMask,
+													uint32_t defaultMask);
 
-inline bool containsAny(uint32_t mask, uint32_t rights) { return (mask & rights) != 0; }
-inline bool containsAll(uint32_t mask, uint32_t rights) { return (mask & rights) == rights; }
+static inline bool wibo_access_containsAny(uint32_t mask, uint32_t rights) { return (mask & rights) != 0; }
+static inline bool wibo_access_containsAll(uint32_t mask, uint32_t rights) { return (mask & rights) == rights; }
 
-extern const GenericMapping kFileGenericMapping;
-extern const GenericMapping kDirectoryGenericMapping;
+extern const GenericMapping wibo_access_kFileGenericMapping;
+extern const GenericMapping wibo_access_kDirectoryGenericMapping;
 
-constexpr DWORD kFileSpecificRightsMask = FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_EXECUTE |
-										  FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES;
-constexpr DWORD kDirectorySpecificRightsMask = FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY |
-											   FILE_TRAVERSE | FILE_DELETE_CHILD | FILE_READ_EA | FILE_WRITE_EA |
-											   FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES;
-
-} // namespace wibo::access
+#define kFileSpecificRightsMask                                                                                        \
+	(FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_EXECUTE | FILE_READ_EA | FILE_WRITE_EA |               \
+	 FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
+#define kDirectorySpecificRightsMask                                                                                   \
+	(FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | FILE_TRAVERSE | FILE_DELETE_CHILD | FILE_READ_EA |   \
+	 FILE_WRITE_EA | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)

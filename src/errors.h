@@ -62,6 +62,11 @@
 #define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
 #define STATUS_NOT_IMPLEMENTED ((NTSTATUS)0xC0000002)
 #define STATUS_ACCESS_VIOLATION ((NTSTATUS)0xC0000005)
+#define STATUS_UNWIND ((NTSTATUS)0xC0000027)
+#define STATUS_ILLEGAL_INSTRUCTION ((NTSTATUS)0xC000001D)
+#define STATUS_FLOAT_DIVIDE_BY_ZERO ((NTSTATUS)0xC000008E)
+#define STATUS_INTEGER_DIVIDE_BY_ZERO ((NTSTATUS)0xC0000094)
+#define STATUS_INTEGER_OVERFLOW ((NTSTATUS)0xC0000095)
 #define STATUS_END_OF_FILE ((NTSTATUS)0xC0000011)
 #define STATUS_OBJECT_TYPE_MISMATCH ((NTSTATUS)0xC0000024)
 #define STATUS_PENDING ((NTSTATUS)0x00000103)
@@ -71,9 +76,12 @@
 
 #define S_OK ((HRESULT)0x00000000)
 
-namespace wibo {
-DWORD winErrorFromErrno(int err);
-NTSTATUS statusFromWinError(DWORD error);
-NTSTATUS statusFromErrno(int err);
-DWORD winErrorFromNtStatus(NTSTATUS status);
-} // namespace wibo
+DWORD wibo_winErrorFromErrno(int err);
+
+// Called by generated guest-to-host thunks around a host shim call. Only defined on wibo32.
+void wibo_errnoGuestToHost(void);
+void wibo_errnoHostToGuest(void);
+
+NTSTATUS wibo_statusFromWinError(DWORD error);
+NTSTATUS wibo_statusFromErrno(int err);
+DWORD wibo_winErrorFromNtStatus(NTSTATUS status);

@@ -2,8 +2,6 @@
 
 #include "types.h"
 
-namespace kernel32 {
-
 BOOL WINAPI DisableThreadLibraryCalls(HMODULE hLibModule);
 HMODULE WINAPI GetModuleHandleA(LPCSTR lpModuleName);
 HMODULE WINAPI GetModuleHandleW(LPCWSTR lpModuleName);
@@ -23,5 +21,3 @@ HMODULE WINAPI LoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 HMODULE WINAPI LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
 BOOL WINAPI FreeLibrary(HMODULE hLibModule);
 FARPROC WINAPI GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
-
-} // namespace kernel32

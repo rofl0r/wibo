@@ -1,26 +1,40 @@
 #pragma once
 
 #include "common.h"
+#include "cutil.h"
 #include "handles.h"
 #include "securitybaseapi.h"
 
-constexpr DWORD SECURITY_LOCAL_SYSTEM_RID = 18;
+#include <stdlib.h>
 
-struct TokenObject : ObjectBase {
-	static constexpr ObjectType kType = ObjectType::Token;
+#define SECURITY_LOCAL_SYSTEM_RID 18
 
-	Pin<> obj;
+typedef struct TokenObject {
+	ObjectBase base;
+	ObjectBase *obj;
 	DWORD desiredAccess;
+} TokenObject;
 
-	explicit TokenObject(Pin<> obj, DWORD desiredAccess)
-		: ObjectBase(kType), obj(std::move(obj)), desiredAccess(desiredAccess) {}
-};
+static inline void TokenObject_destroy(ObjectBase *base) {
+	TokenObject *self = (TokenObject *)base;
+	ObjectBase_unref(self->obj);
+	free(self);
+}
 
-using SidIdentifierAuthority = SID_IDENTIFIER_AUTHORITY;
+// Takes ownership of the reference to `obj`.
+static inline TokenObject *TokenObject_alloc(ObjectBase *obj, DWORD desiredAccess) {
+	TokenObject *self = xcalloc(1, sizeof(*self));
+	ObjectBase_init(&self->base, ObjectType_Token, TokenObject_destroy);
+	self->obj = obj;
+	self->desiredAccess = desiredAccess;
+	return self;
+}
 
-struct Sid {
+typedef SID_IDENTIFIER_AUTHORITY SidIdentifierAuthority;
+
+typedef struct Sid {
 	BYTE Revision;
 	BYTE SubAuthorityCount;
 	SidIdentifierAuthority IdentifierAuthority;
 	DWORD SubAuthority[1];
-};
+} Sid;

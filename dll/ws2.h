@@ -2,7 +2,7 @@
 
 #include "types.h"
 
-struct WSADATA {
+typedef struct WSADATA {
 	WORD wVersion;
 	WORD wHighVersion;
 	CHAR szDescription[257];
@@ -10,15 +10,12 @@ struct WSADATA {
 	WORD iMaxSockets;
 	WORD iMaxUdpDg;
 	GUEST_PTR lpVendorInfo;
-};
+} WSADATA;
 
-namespace ws2 {
-
+// gethostname, gethostbyname and select are exported under those names; the C identifiers avoid clashing with libc.
 int WINAPI WSAStartup(WORD wVersionRequired, WSADATA *lpWSAData);
-int WINAPI WSACleanup();
-int WINAPI WSAGetLastError();
-int WINAPI gethostname(LPSTR name, int namelen);
-GUEST_PTR WINAPI gethostbyname(LPCSTR name);
-int WINAPI select(int nfds, LPVOID readfds, LPVOID writefds, LPVOID exceptfds, const void *timeout);
-
-} // namespace ws2
+int WINAPI WSACleanup(void);
+int WINAPI WSAGetLastError(void);
+int WINAPI ws2_gethostname(LPSTR name, int namelen);
+GUEST_PTR WINAPI ws2_gethostbyname(LPCSTR name);
+int WINAPI ws2_select(int nfds, LPVOID readfds, LPVOID writefds, LPVOID exceptfds, const void *timeout);
